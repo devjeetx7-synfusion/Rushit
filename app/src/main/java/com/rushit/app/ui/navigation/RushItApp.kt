@@ -36,6 +36,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.rushit.app.BuildConfig
+import com.rushit.app.ui.studio.HomeStudioScreen
 import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.data.order.OrderDraft
 import com.rushit.app.domain.categoriesForMode
@@ -101,6 +103,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     }
 
     fun selectMain(destination: String) {
+        if (nav.currentDestination?.route == destination) return
         nav.navigate(destination) {
             popUpTo("home") { saveState = true }
             launchSingleTop = true
@@ -206,7 +209,20 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     }
                     composable("account") {
                         if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
-                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn)
+                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn,
+                            onSettings = if (BuildConfig.DEBUG) ({ nav.navigate("settings") { launchSingleTop = true } }) else null)
+                    }
+                    if (BuildConfig.DEBUG) {
+                        composable("settings") {
+                            Column(Modifier.fillMaxSize().background(Cream).padding(16.dp)) {
+                                androidx.compose.material3.TextButton(onClick = { nav.popBackStack() }) { androidx.compose.material3.Text("‹ Account") }
+                                androidx.compose.material3.Text("Settings", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                                androidx.compose.material3.TextButton(onClick = { nav.navigate("home_studio") { launchSingleTop = true } }) {
+                                    androidx.compose.material3.Text("Home UI Studio  ›")
+                                }
+                            }
+                        }
+                        composable("home_studio") { HomeStudioScreen(onBack = { nav.popBackStack() }) }
                     }
                     composable("search") {
                         if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,

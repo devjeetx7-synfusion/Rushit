@@ -1,0 +1,24 @@
+# Home UI Studio: audit and validation notes
+
+## Baseline (before changes)
+
+- Entry: `MainActivity` creates `RushItApp` with Auth, Shop and Order view models; `RushItApplication` binds Supabase phone auth, `SampleCatalogRepository`, and a local order repository. Compose Material 3, Navigation Compose and Coil are already in use. SDK 34, Java 17, Gradle 8.7.
+- There was no Settings screen. Account is the existing account destination. Home and bottom navigation are in `HomeScreen.kt`, `RushItApp.kt` and `NavigationComponents.kt`.
+- Home has a keyed outer LazyColumn, a keyed LazyRow category rail, and product cards in a non-lazy Column *inside one lazy item*. Large real catalogs may therefore compose all Home product cards at once. Listing and cart screens use keyed lazy lists. Home scroll uses `rememberLazyListState`; the main navigation uses saveState/restoreState. Neither scroll preservation nor scaling was measured on a device.
+- Search input is deliberately debounced 250 ms; catalog loading runs on IO with an in-flight guard. Shop mode, addresses, wishlist and recent searches use SharedPreferences; carts are in memory. Orders are local demo records. The catalog is illustrative, not live. Auth uses the existing Supabase integration.
+- Home mode and category selection, content, wishlist, cart and navigation already have Compose transitions and reduced-motion support. The banner loop ran while Home remained composed even when the app was backgrounded. The Home loading skeleton also creates an infinite transition even with reduced motion enabled; it remains a follow-up.
+- Bottom navigation already uses singleTop and saved state, but reselecting the currently selected tab still ran the navigation operation. Account's disabled sign-in/out row disabled its click but did not visually dim. These are code-level observations, not measured causes of the reported slow taps.
+- The floating cart is placed in Scaffold's bottom bar, so Scaffold padding reserves space rather than overlaying Home. Insets use safeDrawing and navigationBarsPadding. Device verification is still necessary, particularly on small screens and with large text.
+- No profiling, emulator, device, JDK or Android SDK was available in this workspace. Baseline `./gradlew :app:assembleDebug --offline` failed before Gradle could run: Java not found. Existing tests and runtime behavior could not be checked; no causal claim about reported slow interactions is justified.
+
+## Scope delivered
+
+Debug builds expose Account → Settings → Home UI Studio. Release navigation and Account have no Studio entry. The production Home does not load the draft. The Studio uses a versioned local SharedPreferences draft, validates its supported fields, falls back on malformed or future-version data, and has a confirmed reset dialog. Preview uses the existing Home components with a separate sample catalog and an in-memory cart/wishlist; navigation, checkout and other external actions report that they are disabled. The original and test preview are explicitly labelled and switchable. Preset selection changes only the top settings; the mode selector, category chips, product shelf, cart summary and grocery title can be changed independently. The festival banner is deliberately a simple locally rendered gradient, not a recreation of the reference artwork. Normal uses the actual existing carousel.
+
+Bottom-nav reselection now returns without navigating; carousel auto-advance is lifecycle-gated; disabled Account action is dimmed. These changes are not device-verified. Tests for codec fallback, validation and top/bottom independence were added but could not be executed here.
+
+## Not implemented / follow-up
+
+This is an initial subset, not the full requested Studio. There is no remote/active config or publishing, asset picker, custom colors/images, suggestions editor, festival tab or category-grid editor, ordering or label/icon editor, arbitrary CTA destination, multiple product shelves, card-style editor, decorative effects, scheduling, or slide/scale/stagger animations. The festival fade can be exercised by cycling presets in Test Preview; there is no split-screen editor. Preview is intentionally not a full shopping/navigation flow and only offers additive sample cart operations; it does not test real cart/order actions. Studio input and preview state beyond the persisted draft are not retained through process death.
+
+Before release, build and run unit/instrumentation tests, add UI tests for Studio and preview isolation/reset, capture baseline screenshots, test all listed interactions, navigation/back stack, cart and scroll on devices with different insets/font sizes, and profile main-thread work, recomposition and frames with a realistic catalog. The full requirements should not be considered complete until those checks and the remaining controls are implemented.
