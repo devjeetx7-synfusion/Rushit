@@ -151,6 +151,12 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
         }
     }
 
+    /** Called only after the order repository confirmed the order was stored. */
+    fun clearCart() {
+        val mode = _state.value.selectedMode
+        _state.update { it.copy(carts = it.carts - mode) }
+    }
+
     fun changeQuantity(productId: String, delta: Int) {
         val product = _state.value.products.firstOrNull { it.id == productId } ?: return
         _state.update { it.copy(carts = updateModeCart(it.carts, product, delta)) }

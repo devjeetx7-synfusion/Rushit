@@ -1,0 +1,248 @@
+package com.rushit.app.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.rushit.app.data.model.Order
+import com.rushit.app.data.model.OrderStatus
+import com.rushit.app.data.order.OrderDraft
+import com.rushit.app.data.order.OrderRepository
+import com.rushit.app.domain.JourneyScene
+import com.rushit.app.domain.canCancel
+import com.rushit.app.domain.sceneFor
+import com.rushit.app.domain.shouldCelebrate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * UI state for ordering and the delivery journey.
+ *
+ * Business state is [order] (loaded from the repository, changed only through declared
+ * transitions). Everything else — the confirmation flash, the celebration flag, the demo
+ * auto-play toggle — is presentation state and can never write a status by itself.
+ */
+data class OrderUiState(
+    val order: Order? = null,
+    val loading: Boolean = false,
+    val placing: Boolean = false,
+    val error: String? = null,
+    val transitionError: String? = null,
+    /** True only immediately after a successful placement, to play the confirmation once. */
+    val justPlaced: Boolean = false,
+    val celebrationPlayed: Boolean = false,
+    val demoAutoPlay: Boolean = false,
+    val riderAssigned: Boolean = false,
+    val orders: List<Order> = emptyList(),
+) {
+    val scene: JourneyScene? get() = order?.let { sceneFor(it.status, riderAssigned) }
+    val canCancel: Boolean get() = order?.let(::canCancel) == true
+    /** Delivered and not yet celebrated: the one condition that may start the celebration. */
+    val showCelebration: Boolean get() = order != null && !celebrationPlayed && shouldCelebrate(order)
+    val isDemo: Boolean get() = order?.isDemo ?: true
+    val editable: Boolean get() = !placing && order == null
+}
+
+class OrderViewModel internal constructor(
+    private val repository: OrderRepository,
+    private val now: () -> String,
+) : ViewModel() {
+
+    constructor(repository: OrderRepository) : this(repository, { java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(java.time.OffsetDateTime.now()) })
+
+    private val _state = MutableStateFlow(OrderUiState())
+    val state = _state.asStateFlow()
+    private var demoJob: Job? = null
+
+    /** Fresh checkout session: clears the previous order view without touching stored orders. */
+    fun beginCheckout() {
+        demoJob?.cancel()
+        demoJob = null
+        _state.update {
+            it.copy(order = null, justPlaced = false, celebrationPlayed = false, error = null, transitionError = null, demoAutoPlay = false, riderAssigned = false)
+        }
+    }
+
+    /** Guards against double taps and repeated submissions before the repository answers. */
+    fun placeOrder(draft: OrderDraft) {
+        val snapshot = _state.value
+        if (snapshot.placing || snapshot.order != null) return
+        _state.update { it.copy(placing = true, error = null, transitionError = null) }
+        viewModelScope.launch {
+            val result = try {
+                repository.placeOrder(draft)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Result.failure(IllegalStateException("The order could not be created."))
+            }
+            result.fold(
+                onSuccess = { order ->
+                    _state.update {
+                        it.copy(order = order, placing = false, justPlaced = true, loading = false, error = null)
+                    }
+                },
+                onFailure = { failure ->
+                    _state.update {
+                        it.copy(
+                            placing = false,
+                            error = failure.message?.takeIf { message -> message.isNotBlank() }
+                                ?: "We couldn't create your order. Please try again.",
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /** Reopens a stored order at its last persisted status; never replays the celebration. */
+    fun open(orderId: String) {
+        if (_state.value.order?.id == orderId) return
+        _state.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            val result = runCatching { repository.order(orderId) }
+            result.fold(
+                onSuccess = { order ->
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            order = order,
+                            justPlaced = false,
+                            celebrationPlayed = order?.celebratedAt != null,
+                            transitionError = if (order == null) "That order could not be found on this device." else null,
+                            error = null,
+                        )
+                    }
+                },
+                onFailure = {
+                    _state.update { it.copy(loading = false, error = "We couldn't load this order. Please try again.") }
+                },
+            )
+        }
+    }
+
+    /** Loads stored orders for the Orders list and the tracking entry point. */
+    fun refreshOrders() {
+        viewModelScope.launch {
+            val stored = runCatching { repository.orders() }.getOrDefault(emptyList())
+            _state.update { it.copy(orders = stored) }
+        }
+    }
+
+    fun clearConfirmationFlag() {
+        if (_state.value.justPlaced) _state.update { it.copy(justPlaced = false) }
+    }
+
+    /**
+     * Moves the demo order exactly one legal step. Only demo orders may be advanced locally; a real
+     * backend order would be refused here, which keeps animation previews away from real state.
+     */
+    fun advanceDemo() {
+        val current = _state.value.order ?: return
+        if (!current.isDemo) {
+            _state.update { it.copy(transitionError = "Only demo orders can be advanced from this screen.") }
+            return
+        }
+        val next = current.status.demoNext() ?: return
+        applyTransition(current.id, next)
+    }
+
+    fun cancelOrder() {
+        val current = _state.value.order ?: return
+        if (!canCancel(current)) {
+            _state.update { it.copy(transitionError = "This order can no longer be cancelled.") }
+            return
+        }
+        applyTransition(current.id, OrderStatus.CANCELLED)
+    }
+
+    private fun applyTransition(orderId: String, next: OrderStatus) {
+        _state.update { it.copy(transitionError = null) }
+        viewModelScope.launch {
+            val result = runCatching { repository.updateStatus(orderId, next) }
+                .getOrElse { Result.failure(it) }
+            result.fold(
+                onSuccess = { updated ->
+                    _state.update { current ->
+                        current.copy(
+                            order = updated,
+                            riderAssigned = updated.status != OrderStatus.READY_FOR_PICKUP || current.riderAssigned,
+                        )
+                    }
+                },
+                onFailure = { failure ->
+                    _state.update { it.copy(transitionError = failure.message ?: "That status change isn't allowed.") }
+                },
+            )
+        }
+    }
+
+    /** Demo-only rider assignment, so the journey can show the "finding rider" state honestly. */
+    fun assignDemoRider() {
+        if (_state.value.order?.isDemo != true) return
+        _state.update { it.copy(riderAssigned = true) }
+    }
+
+    /** Explicit opt-in preview that steps through demo stages; disabled for real orders. */
+    fun setDemoAutoPlay(enabled: Boolean) {
+        demoJob?.cancel()
+        demoJob = null
+        _state.update { it.copy(demoAutoPlay = enabled) }
+        if (!enabled) return
+        if (_state.value.order?.isDemo != true) {
+            _state.update { it.copy(demoAutoPlay = false) }
+            return
+        }
+        demoJob = viewModelScope.launch {
+            while (true) {
+                delay(DEMO_STEP_MILLIS)
+                val current = _state.value
+                val order = current.order ?: break
+                if (!current.demoAutoPlay || order.isTerminal) {
+                    _state.update { it.copy(demoAutoPlay = false) }
+                    break
+                }
+                if (order.status == OrderStatus.READY_FOR_PICKUP) assignDemoRider()
+                advanceDemo()
+            }
+        }
+    }
+
+    /** Marks the celebration as seen so it cannot replay when the screen is reopened. */
+    fun onCelebrationShown() {
+        val order = _state.value.order ?: return
+        if (_state.value.celebrationPlayed) return
+        _state.update { it.copy(celebrationPlayed = true) }
+        if (!order.isDemo) return
+        viewModelScope.launch {
+            runCatching { repository.markCelebrated(order.id, now()) }
+                .onSuccess { updated -> _state.update { it.copy(order = updated) } }
+        }
+    }
+
+    fun clearError() {
+        _state.update { it.copy(error = null, transitionError = null) }
+    }
+
+    fun reset() {
+        demoJob?.cancel()
+        demoJob = null
+        _state.value = OrderUiState()
+    }
+
+    companion object {
+        const val DEMO_STEP_MILLIS = 3_200L
+
+        fun factory(repository: OrderRepository) = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                require(modelClass.isAssignableFrom(OrderViewModel::class.java))
+                return OrderViewModel(repository) as T
+            }
+        }
+    }
+}

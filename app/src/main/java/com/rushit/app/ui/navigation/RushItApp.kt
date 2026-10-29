@@ -37,7 +37,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rushit.app.data.model.ShoppingMode
+import com.rushit.app.data.order.OrderDraft
 import com.rushit.app.domain.categoriesForMode
+import com.rushit.app.domain.DeliveryPricing
+import com.rushit.app.domain.orderLinesFor
 import com.rushit.app.domain.productsForMode
 import com.rushit.app.ui.components.CartSummary
 import com.rushit.app.ui.components.RushBottomBar
@@ -56,18 +59,22 @@ import com.rushit.app.ui.screens.store.CategoriesScreen
 import com.rushit.app.ui.screens.store.OrdersScreen
 import com.rushit.app.ui.screens.store.ProductListingScreen
 import com.rushit.app.ui.screens.store.SearchScreen
+import com.rushit.app.ui.screens.order.OrderDetailsScreen
+import com.rushit.app.ui.screens.order.OrderJourneyScreen
 import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.LocalReducedMotion
 import com.rushit.app.ui.theme.rememberReducedMotion
 import com.rushit.app.ui.viewmodel.AuthEvent
 import com.rushit.app.ui.viewmodel.AuthViewModel
+import com.rushit.app.ui.viewmodel.OrderViewModel
 import com.rushit.app.ui.viewmodel.ShopViewModel
 import kotlinx.coroutines.flow.collect
 
 @Composable
-fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
+fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) {
     val authState by auth.state.collectAsState()
     val shopState by shop.state.collectAsState()
+    val orderState by orders.state.collectAsState()
     val nav = rememberNavController()
     var needsStartupRoute by remember(auth) { mutableStateOf(!auth.startupRouteHandled) }
     val entry by nav.currentBackStackEntryAsState()
@@ -78,6 +85,21 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
     val shoppingRoute = !needsStartupRoute && (showTabs || route == "search" || route == "all" || route == "bestsellers" || route == "wishlist" || route == "category/{id}")
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val showSummary = shoppingRoute && shopState.totals.itemCount > 0 && !imeVisible
+
+    LaunchedEffect(Unit) { orders.refreshOrders() }
+
+    // A placed order is only announced after the repository stored it.
+    val placedOrderId = orderState.order?.id?.takeIf { orderState.justPlaced }
+    LaunchedEffect(placedOrderId) {
+        val id = placedOrderId ?: return@LaunchedEffect
+        shop.clearCart()
+        orders.clearConfirmationFlag()
+        orders.refreshOrders()
+        nav.navigate("journey/${Uri.encode(id)}") {
+            popUpTo("cart") { inclusive = true }
+            launchSingleTop = true
+        }
+    }
 
     fun selectMain(destination: String) {
         nav.navigate(destination) {
@@ -175,10 +197,17 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
                             onRetry = shop::loadCatalog,
                         )
                     }
-                    composable("orders") { if (!needsStartupRoute) OrdersScreen(onHome = { selectMain("home") }, onTracking = { nav.navigate("tracking") { launchSingleTop = true } }) }
+                    composable("orders") {
+                        if (!needsStartupRoute) OrdersScreen(
+                            state = orderState,
+                            onHome = { selectMain("home") },
+                            onOpenOrder = { id -> nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true } },
+                            onTracking = { nav.navigate("tracking") { launchSingleTop = true } },
+                        )
+                    }
                     composable("account") {
                         if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
-                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn)
+                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn)
                     }
                     composable("search") {
                         if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,
@@ -226,9 +255,73 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
                             onDelete = shop::removeAddress, onSave = shop::saveAddress)
                     }
                     composable("checkout") {
-                        if (!needsStartupRoute) CheckoutScreen(shopState, onBack = { nav.popBackStack() }, onAddress = { nav.navigate("addresses") { launchSingleTop = true } })
+                        LaunchedEffect(Unit) { orders.beginCheckout() }
+                        if (!needsStartupRoute) CheckoutScreen(
+                            state = shopState,
+                            orderState = orderState,
+                            onBack = { nav.popBackStack() },
+                            onAddress = { nav.navigate("addresses") { launchSingleTop = true } },
+                            onChangeQuantity = shop::changeQuantity,
+                            onPlaceOrder = {
+                                val lines = orderLinesFor(shopState.cart, shopState.products)
+                                if (lines.isNotEmpty()) {
+                                    val subtotal = lines.sumOf { it.lineTotalPaise }
+                                    orders.placeOrder(
+                                        OrderDraft(
+                                            items = lines,
+                                            mode = shopState.selectedMode,
+                                            addressSummary = shopState.address,
+                                            platformFeePaise = DeliveryPricing.platformFee(),
+                                            deliveryFeePaise = DeliveryPricing.deliveryFee(subtotal),
+                                        ),
+                                    )
+                                }
+                            },
+                        )
                     }
-                    composable("tracking") { if (!needsStartupRoute) TrackingScreen(onBack = { nav.popBackStack() }) }
+                    composable("journey/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        if (!needsStartupRoute) {
+                            LaunchedEffect(backStackEntry) {
+                                backStackEntry.arguments?.getString("id")?.let(orders::open)
+                            }
+                            OrderJourneyScreen(
+                                state = orderState,
+                                onBack = { nav.popBackStack() },
+                                onAdvance = orders::advanceDemo,
+                                onAssignRider = orders::assignDemoRider,
+                                onCancel = orders::cancelOrder,
+                                onToggleAutoPlay = orders::setDemoAutoPlay,
+                                onViewOrder = { id -> nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true } },
+                                onContinueShopping = { selectMain("home") },
+                                onCelebrationShown = orders::onCelebrationShown,
+                                onRetry = { backStackEntry.arguments?.getString("id")?.let(orders::open) },
+                            )
+                        }
+                    }
+                    composable("order/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        if (!needsStartupRoute) {
+                            LaunchedEffect(backStackEntry) {
+                                backStackEntry.arguments?.getString("id")?.let(orders::open)
+                            }
+                            OrderDetailsScreen(
+                                state = orderState,
+                                onBack = { nav.popBackStack() },
+                                onTrack = { id -> nav.navigate("journey/${Uri.encode(id)}") { launchSingleTop = true } },
+                                onHelp = { nav.navigate("account") { launchSingleTop = true } },
+                            )
+                        }
+                    }
+                    composable("tracking") {
+                        if (!needsStartupRoute) {
+                            orders.refreshOrders()
+                            TrackingScreen(
+                                orders = orderState.orders,
+                                onBack = { nav.popBackStack() },
+                                onOpenOrder = { id -> nav.navigate("journey/${Uri.encode(id)}") { launchSingleTop = true } },
+                                onShop = { selectMain("home") },
+                            )
+                        }
+                    }
                 }
                 AnimatedVisibility(
                     visible = needsStartupRoute,
