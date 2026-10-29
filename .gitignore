@@ -8,5 +8,18 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+# Signing keys and local signing configuration must never be committed.
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pk8
+*.key
+*.pem
+*keystore*.properties
+*signing*.properties
+key.properties
+*.b64
+*.base64
+signing.env
+.env.signing
