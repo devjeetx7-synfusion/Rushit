@@ -340,7 +340,7 @@ private fun PromoBannerCarousel(mode: ShoppingMode, onShop: () -> Unit, modifier
         HorizontalPager(
             state = pagerState,
             pageSpacing = 12.dp,
-            modifier = Modifier.fillMaxWidth().height(162.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 162.dp),
         ) { index ->
             PromoCard(pages[index], onShop)
         }
@@ -359,7 +359,7 @@ private fun PromoBannerCarousel(mode: ShoppingMode, onShop: () -> Unit, modifier
 
 @Composable
 private fun PromoCard(page: PromoPage, onShop: () -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxWidth().height(162.dp).clip(RoundedCornerShape(22.dp)).background(BannerPeach)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 162.dp).clip(RoundedCornerShape(22.dp)).background(BannerPeach)) {
         val fadeEnd = with(LocalDensity.current) { maxWidth.toPx() * .68f }
         Image(painterResource(page.image), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
         Box(
