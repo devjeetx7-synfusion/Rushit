@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -106,7 +107,7 @@ fun OrdersScreen(
 }
 
 @Composable
-fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit) {
+fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit, onSettings: (() -> Unit)? = null) {
     var showHelp by rememberSaveable { mutableStateOf(false) }
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -131,6 +132,10 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
         Spacer(Modifier.height(8.dp))
         AccountRow(R.drawable.ic_help_circle, "Help", "Phone sign-in and sample store", { showHelp = true })
         Spacer(Modifier.height(8.dp))
+        if (onSettings != null) {
+            AccountRow(R.drawable.ic_grid_view, "Settings", "Development tools", onSettings)
+            Spacer(Modifier.height(8.dp))
+        }
         AccountRow(R.drawable.ic_logout_01, if (auth.authenticated) "Sign out" else "Sign in", if (auth.busy) "Please wait…" else "",
             { if (auth.authenticated) confirmSignOut = true else onSignInOrOut() }, enabled = !auth.busy)
         auth.error?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
@@ -149,7 +154,7 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
 @Composable
 private fun AccountRow(icon: Int, title: String, subtitle: String, onClick: () -> Unit, enabled: Boolean = true) {
     Surface(shape = RoundedCornerShape(16.dp), color = CardWhite, border = BorderStroke(1.dp, Border.copy(alpha = .6f))) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().alpha(if (enabled) 1f else .5f).clip(RoundedCornerShape(16.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             RushIcon(icon, null, Modifier.size(23.dp), Coral)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {

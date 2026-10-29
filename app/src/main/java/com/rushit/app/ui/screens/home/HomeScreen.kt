@@ -55,6 +55,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +86,8 @@ import com.rushit.app.ui.theme.Motion
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.motionDuration
+import com.rushit.app.ui.studio.HomeStudioConfig
+import com.rushit.app.ui.studio.Festival
 import com.rushit.app.ui.viewmodel.ShopUiState
 import kotlinx.coroutines.delay
 
@@ -101,6 +106,7 @@ fun HomeScreen(
     onAdd: (String) -> Unit,
     onWishlist: (String) -> Unit,
     onRetry: () -> Unit,
+    previewConfig: HomeStudioConfig? = null,
 ) {
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -110,7 +116,7 @@ fun HomeScreen(
         productsForSelection(state.products, state.selectedMode, state.selectedCategoryId)
     }
     val sectionTitle = selectedCategory?.name ?: when (state.selectedMode) {
-        ShoppingMode.GROCERY -> "Bestsellers"
+        ShoppingMode.GROCERY -> previewConfig?.bottom?.groceryTitle?.takeIf { it.isNotBlank() } ?: "Bestsellers"
         ShoppingMode.ECOMMERCE -> "Explore examples"
         ShoppingMode.GIFTS -> "Gift collections"
     }
@@ -128,7 +134,7 @@ fun HomeScreen(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f))
+                SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f), previewConfig?.top?.searchPlaceholder)
                 Spacer(Modifier.width(8.dp))
                 RoundIconButton(
                     R.drawable.ic_shopping_cart_01,
@@ -141,7 +147,11 @@ fun HomeScreen(
             }
         }
         item(key = "banner") {
-            PromoBannerCarousel(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
+            if (previewConfig == null || previewConfig.top.festival == Festival.NORMAL) {
+                PromoBannerCarousel(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
+            } else {
+                FestivalBanner(previewConfig, onShopNow)
+            }
         }
         if (state.isSample) {
             item(key = "sample") {
@@ -153,14 +163,14 @@ fun HomeScreen(
                 )
             }
         }
-        item(key = "shopping_modes") {
+        if (previewConfig?.bottom?.showModes != false) item(key = "shopping_modes") {
             ShoppingModeSwitcher(
                 selectedMode = state.selectedMode,
                 onModeSelected = onModeSelected,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
             )
         }
-        item(key = "categories") {
+        if (previewConfig?.bottom?.showCategories != false) item(key = "categories") {
             if (categories.isNotEmpty()) {
                 CategoryRail(
                     categories = categories,
@@ -170,7 +180,7 @@ fun HomeScreen(
                 )
             }
         }
-        item(key = "section_header") {
+        if (previewConfig?.bottom?.showProducts != false) item(key = "section_header") {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -207,7 +217,7 @@ fun HomeScreen(
                 )
             }
         }
-        item(key = "products") {
+        if (previewConfig?.bottom?.showProducts != false) item(key = "products") {
             ProductSection(
                 state = state,
                 onAdd = onAdd,
@@ -276,7 +286,7 @@ private fun LocationHeader(address: String?, onAddress: () -> Unit, onNotificati
 }
 
 @Composable
-private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modifier = Modifier) {
+private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modifier = Modifier, placeholder: String? = null) {
     Row(
         modifier.heightIn(min = 54.dp).clip(CircleShape).background(CardWhite.copy(alpha = .76f))
             .border(1.dp, Border, CircleShape).clickable(role = Role.Button, onClickLabel = "Search products", onClick = onClick)
@@ -286,12 +296,41 @@ private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modif
         RushIcon(R.drawable.ic_search_01, null, Modifier.size(22.dp), Ink)
         Spacer(Modifier.width(12.dp))
         Text(
-            if (mode == ShoppingMode.GROCERY) "Search for milk, fruits, snacks…" else "Search ${mode.label.lowercase()}…",
+            placeholder?.takeIf { it.isNotBlank() } ?: if (mode == ShoppingMode.GROCERY) "Search for milk, fruits, snacks…" else "Search ${mode.label.lowercase()}…",
             color = Muted,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun FestivalBanner(config: HomeStudioConfig, onShop: () -> Unit) {
+    val top = config.top
+    val festival = top.festival
+    val reduced = LocalReducedMotion.current
+    AnimatedContent(
+        targetState = festival,
+        transitionSpec = {
+            val duration = if (reduced || !top.animate) 0 else top.durationMs
+            fadeIn(tween(duration)).togetherWith(fadeOut(tween(duration)))
+        },
+        label = "festival banner",
+        modifier = Modifier.padding(horizontal = 16.dp),
+    ) { selected ->
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 162.dp).clip(RoundedCornerShape(22.dp))
+                .background(Brush.horizontalGradient(listOf(Color(selected.color), Color(selected.color).copy(alpha = .72f))))
+                .padding(20.dp),
+        ) {
+            Text(top.heading.ifBlank { selected.heading }, style = MaterialTheme.typography.headlineMedium, color = Color.White)
+            Text(top.subtitle.ifBlank { selected.subtitle }, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+            Spacer(Modifier.height(10.dp))
+            Text(top.cta.ifBlank { "Shop Now" }, color = Color.White, style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clip(CircleShape).background(CtaRed).clickable(role = Role.Button, onClick = onShop)
+                    .padding(horizontal = 15.dp, vertical = 10.dp))
+        }
     }
 }
 
@@ -326,12 +365,15 @@ private fun PromoBannerCarousel(mode: ShoppingMode, onShop: () -> Unit, modifier
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val reduced = LocalReducedMotion.current
 
-    LaunchedEffect(pagerState, reduced, pages.size) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(pagerState, reduced, pages.size, lifecycle) {
         if (reduced || pages.size <= 1) return@LaunchedEffect
-        while (true) {
-            delay(Motion.BANNER_AUTO_ADVANCE_MS)
-            if (!pagerState.isScrollInProgress) {
-                pagerState.animateScrollToPage((pagerState.currentPage + 1) % pages.size)
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(Motion.BANNER_AUTO_ADVANCE_MS)
+                if (!pagerState.isScrollInProgress) {
+                    pagerState.animateScrollToPage((pagerState.currentPage + 1) % pages.size)
+                }
             }
         }
     }
