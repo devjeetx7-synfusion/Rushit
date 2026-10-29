@@ -163,8 +163,11 @@ class OrderViewModel internal constructor(
     private fun applyTransition(orderId: String, next: OrderStatus) {
         _state.update { it.copy(transitionError = null) }
         viewModelScope.launch {
-            val result = runCatching { repository.updateStatus(orderId, next) }
-                .getOrElse { Result.failure(it) }
+            val result = try {
+                repository.updateStatus(orderId, next)
+            } catch (_: Exception) {
+                Result.failure(IllegalStateException("That status change isn't allowed."))
+            }
             result.fold(
                 onSuccess = { updated ->
                     _state.update { current ->
@@ -202,7 +205,7 @@ class OrderViewModel internal constructor(
                 delay(DEMO_STEP_MILLIS)
                 val current = _state.value
                 val order = current.order ?: break
-                if (!current.demoAutoPlay || order.isTerminal) {
+                if (!current.demoAutoPlay || order.status.isTerminal) {
                     _state.update { it.copy(demoAutoPlay = false) }
                     break
                 }
@@ -219,8 +222,12 @@ class OrderViewModel internal constructor(
         _state.update { it.copy(celebrationPlayed = true) }
         if (!order.isDemo) return
         viewModelScope.launch {
-            runCatching { repository.markCelebrated(order.id, now()) }
-                .onSuccess { updated -> _state.update { it.copy(order = updated) } }
+            val result = try {
+                repository.markCelebrated(order.id, now())
+            } catch (_: Exception) {
+                Result.failure(IllegalStateException("Could not record the celebration."))
+            }
+            result.onSuccess { updated -> _state.update { it.copy(order = updated) } }
         }
     }
 

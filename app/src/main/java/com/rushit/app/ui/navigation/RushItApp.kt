@@ -294,7 +294,10 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                                 onViewOrder = { id -> nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true } },
                                 onContinueShopping = { selectMain("home") },
                                 onCelebrationShown = orders::onCelebrationShown,
-                                onRetry = { backStackEntry.arguments?.getString("id")?.let(orders::open) },
+                                onRetry = {
+                                    val id = backStackEntry.arguments?.getString("id")
+                                    if (id != null) orders.open(id)
+                                },
                             )
                         }
                     }

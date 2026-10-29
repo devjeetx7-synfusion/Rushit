@@ -164,9 +164,9 @@ fun DeliveryScooter(
     modifier: Modifier = Modifier,
     wheelRotation: Float = 0f,
     lean: Float = 0f,
-    contentDescription: String = "RushIt delivery scooter",
+    label: String = "RushIt delivery scooter",
 ) {
-    Canvas(modifier.fillMaxSize().semantics { contentDescription = contentDescription }) {
+    Canvas(modifier.fillMaxSize().semantics { contentDescription = label }) {
         withTransform({ rotate(lean, pivot = Offset(size.width * 0.5f, size.height * 0.82f)) }) {
             drawScooter(wheelRotation)
         }
@@ -442,7 +442,7 @@ fun DeliveryRouteMap(
             val control = Offset(size.width * 0.24f, size.height * 0.86f)
             val route = Path().apply {
                 moveTo(start.x, start.y)
-                quadraticTo(control.x, control.y, end.x, end.y)
+                quadraticBezierTo(control.x, control.y, end.x, end.y)
             }
             drawPath(route, Color(0xFFD8D2C6), style = Stroke(width = size.height * 0.05f, cap = StrokeCap.Round))
             drawPath(route, Coral.copy(alpha = 0.85f), style = Stroke(width = size.height * 0.018f, cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(size.height * 0.035f, size.height * 0.03f))))
