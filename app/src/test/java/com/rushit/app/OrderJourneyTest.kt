@@ -124,7 +124,7 @@ class OrderJourneyTest {
         )
         assertEquals(11_200, orderSubtotal(lines))
         assertEquals(11_700, DeliveryPricing.total(orderSubtotal(lines)))
-        assertEquals(5_200L, DeliveryPricing.platformFee())
+        assertEquals(500L, DeliveryPricing.platformFee())
     }
 }
 
