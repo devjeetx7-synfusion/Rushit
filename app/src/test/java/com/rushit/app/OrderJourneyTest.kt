@@ -3,7 +3,6 @@ package com.rushit.app
 import com.rushit.app.data.model.Order
 import com.rushit.app.data.model.OrderLine
 import com.rushit.app.data.model.OrderStatus
-import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.domain.DeliveryPricing
 import com.rushit.app.domain.DeliveryStage
 import com.rushit.app.domain.JourneyScene
@@ -125,19 +124,27 @@ class OrderJourneyTest {
         )
         assertEquals(11_200, orderSubtotal(lines))
         assertEquals(11_700, DeliveryPricing.total(orderSubtotal(lines)))
-        assertEquals(ShoppingMode.GROCERY, lines.first().let { ShoppingMode.GROCERY })
+        assertEquals(5_200L, DeliveryPricing.platformFee())
     }
 }
 
 class OrderTimeTest {
-    @Test fun `storage timestamps round-trip and display`() {
-        val stamp = "2026-10-29T10:15:00+0530"
-        assertEquals("29 Oct, 10:15 am", com.rushit.app.domain.OrderTime.display(stamp).lowercase().replace("am", "am"))
-        assertTrue(com.rushit.app.domain.OrderTime.display(stamp).contains("29 Oct"))
-        assertTrue(com.rushit.app.domain.OrderTime.displayWithYear(stamp).contains("2026"))
+    @Test fun `timestamps round-trip through the storage format`() {
+        val stamp = com.rushit.app.domain.OrderTime.now()
+        // Same default time zone for writing and reading, so the date part must match exactly.
+        assertEquals(stamp.substring(0, 10), com.rushit.app.domain.OrderTime.display(stamp, "yyyy-MM-dd"))
+        assertTrue(com.rushit.app.domain.OrderTime.displayWithYear(stamp).contains(stamp.substring(0, 4)))
     }
 
-    @Test fun `unknown timestamps are shown verbatim instead of crashing`() {
+    @Test fun `colon offsets and millisecond timestamps are accepted`() {
+        val colon = com.rushit.app.domain.OrderTime.display("2026-10-29T10:15:00+05:30", "yyyy-MM-dd")
+        val millis = com.rushit.app.domain.OrderTime.display("2026-10-29T10:15:00.500+0530", "yyyy-MM-dd")
+        assertTrue(colon.startsWith("2026-10-29"))
+        assertEquals("2026-10-29", millis)
+    }
+
+    @Test fun `unparseable timestamps are shown verbatim instead of crashing`() {
         assertEquals("not-a-date", com.rushit.app.domain.OrderTime.display("not-a-date"))
+        assertEquals("", com.rushit.app.domain.OrderTime.display(""))
     }
 }
