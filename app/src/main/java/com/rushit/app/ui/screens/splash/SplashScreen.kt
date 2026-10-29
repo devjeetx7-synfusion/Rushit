@@ -25,7 +25,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -53,14 +55,23 @@ import com.rushit.app.ui.viewmodel.AuthUiState
 @Composable
 fun SplashScreen(state: AuthUiState, onFinished: (Boolean) -> Unit) {
     var entered by remember { mutableStateOf(false) }
+    var routed by remember { mutableStateOf(false) }
+    val authenticated by rememberUpdatedState(state.authenticated)
+    val finish by rememberUpdatedState(onFinished)
     LaunchedEffect(Unit) { entered = true }
     LaunchedEffect(state.initializing) {
-        if (!state.initializing) onFinished(state.authenticated)
+        if (!state.initializing && !routed) {
+            // Let the first visible frame and NavHost attach without adding a startup timer.
+            withFrameNanos { }
+            routed = true
+            finish(authenticated)
+        }
     }
-    val logoAlpha by animateFloatAsState(if (entered) 1f else 0f, tween(600), label = "logo fade")
-    val logoScale by animateFloatAsState(if (entered) 1f else 0.94f, tween(650), label = "logo scale")
-    val imageAlpha by animateFloatAsState(if (entered) 1f else 0f, tween(850, delayMillis = 100), label = "illustration entrance")
-    val imageScale by animateFloatAsState(if (entered) 1f else 0.96f, tween(850, delayMillis = 100), label = "illustration scale")
+    // A fast session check can finish before the animation starts: content must never start invisible.
+    val logoAlpha by animateFloatAsState(if (entered) 1f else 0.78f, tween(450), label = "logo fade")
+    val logoScale by animateFloatAsState(if (entered) 1f else 0.96f, tween(500), label = "logo scale")
+    val imageAlpha by animateFloatAsState(if (entered) 1f else 0.72f, tween(550), label = "illustration entrance")
+    val imageScale by animateFloatAsState(if (entered) 1f else 0.98f, tween(550), label = "illustration scale")
 
     Column(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Cream, Cream, Peach.copy(alpha = 0.65f))))

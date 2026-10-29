@@ -7,6 +7,9 @@ import com.rushit.app.data.auth.SessionResult
 import com.rushit.app.data.auth.SessionStore
 import com.rushit.app.data.auth.StoredSession
 import com.rushit.app.data.auth.SupabaseAuthRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -16,6 +19,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class SupabaseAuthRepositoryTest {
     private data class Request(val method: String, val path: String, val body: JSONObject?, val token: String?)
@@ -94,6 +99,26 @@ class SupabaseAuthRepositoryTest {
         transport.reply = { if (it.path == "/user") AuthResponse(401, "{}") else AuthResponse(400, "{}") }
         assertTrue(repo.restoreSession() is SessionResult.Unauthenticated)
         assertNull(store.session)
+    }
+
+    @Test fun `cancelled restore cannot write a late refresh result`() = runBlocking {
+        val old = StoredSession("old-access", "old-refresh")
+        val store = MemoryStore(old)
+        val refreshStarted = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val transport = FakeTransport { request ->
+            if (request.path == "/user") AuthResponse(401, "{}") else {
+                refreshStarted.countDown()
+                check(release.await(3, TimeUnit.SECONDS))
+                AuthResponse(200, """{"access_token":"late-access","refresh_token":"late-refresh"}""")
+            }
+        }
+        val job = launch(Dispatchers.Default) { repository(store, transport).restoreSession() }
+        assertTrue("refresh did not start", refreshStarted.await(3, TimeUnit.SECONDS))
+        job.cancel()
+        release.countDown()
+        job.cancelAndJoin()
+        assertEquals(old, store.session)
     }
 
     @Test fun `failed remote signout clears local session and reports revocation failure`() = runBlocking {

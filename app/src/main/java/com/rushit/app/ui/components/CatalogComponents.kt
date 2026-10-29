@@ -1,7 +1,6 @@
 package com.rushit.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,10 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
 import com.rushit.app.R
 import com.rushit.app.data.model.Category
 import com.rushit.app.data.model.Product
@@ -47,7 +47,6 @@ import com.rushit.app.ui.theme.Border
 import com.rushit.app.ui.theme.CardWhite
 import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.CtaRed
-import com.rushit.app.ui.theme.DeepRed
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
@@ -55,10 +54,13 @@ import com.rushit.app.ui.theme.SoftRed
 
 @Composable
 fun CatalogImage(url: String?, localImage: Int?, description: String?, modifier: Modifier = Modifier) {
-    val fallback = painterResource(localImage ?: R.drawable.ic_package_01)
+    val placeholder = painterResource(R.drawable.ic_package_01)
     if (url.isNullOrBlank()) {
-        Image(painter = fallback, contentDescription = description, contentScale = ContentScale.Fit, modifier = modifier)
+        // Coil resolves the requested display size and caches decoded local assets off the UI thread.
+        AsyncImage(model = localImage ?: R.drawable.ic_package_01, contentDescription = description,
+            placeholder = placeholder, error = placeholder, contentScale = ContentScale.Fit, modifier = modifier)
     } else {
+        val fallback = if (localImage != null) rememberAsyncImagePainter(localImage) else placeholder
         AsyncImage(model = url, contentDescription = description, placeholder = fallback, error = fallback, contentScale = ContentScale.Fit, modifier = modifier)
     }
 }
@@ -85,11 +87,16 @@ fun ProductCard(
     wished: Boolean,
     onAdd: () -> Unit,
     onWishlist: () -> Unit,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 126.dp,
+    width: Dp = Dp.Unspecified,
 ) {
+    val priceText = remember(product.pricePaise) { formatPrice(product.pricePaise) }
+    val originalPriceText = remember(product.originalPricePaise) { product.originalPricePaise?.let(::formatPrice) }
     Surface(
-        modifier = modifier.width(width).heightIn(min = 200.dp),
+        modifier = (if (width == Dp.Unspecified) modifier.fillMaxWidth() else modifier.width(width))
+            .heightIn(min = 200.dp).clip(RoundedCornerShape(18.dp))
+            .clickable(role = Role.Button, onClickLabel = "View ${product.name} details", onClick = onOpen),
         shape = RoundedCornerShape(18.dp), color = CardWhite,
         shadowElevation = 2.dp, border = BorderStroke(1.dp, Border.copy(alpha = 0.55f)),
     ) {
@@ -114,22 +121,27 @@ fun ProductCard(
             Text(product.name, style = MaterialTheme.typography.labelMedium, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, minLines = 1)
             Spacer(Modifier.height(2.dp))
             Text(product.unit, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1)
+            if (product.previewOnly || !product.isAvailable || (product.stockQuantity != null && product.stockQuantity <= 0)) {
+                Text(if (product.previewOnly) "Preview only" else "Unavailable", color = Muted, style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                    Text(formatPrice(product.pricePaise), style = MaterialTheme.typography.labelLarge, color = Ink, maxLines = 1)
-                    if (product.originalPricePaise != null && product.originalPricePaise > product.pricePaise) {
-                        Text(formatPrice(product.originalPricePaise), style = MaterialTheme.typography.bodySmall, color = Muted, textDecoration = TextDecoration.LineThrough)
+                    Text(priceText, style = MaterialTheme.typography.labelLarge, color = Ink, maxLines = 1)
+                    if (product.originalPricePaise != null && product.originalPricePaise > product.pricePaise && originalPriceText != null) {
+                        Text(originalPriceText, style = MaterialTheme.typography.bodySmall, color = Muted, textDecoration = TextDecoration.LineThrough)
                     }
                 }
-                if (product.isAvailable && product.stockQuantity != 0) {
+                if (!product.previewOnly && product.isAvailable && (product.stockQuantity == null || product.stockQuantity > 0)) {
+                    val canAddMore = quantity < (product.stockQuantity?.coerceAtMost(99) ?: 99)
                     Box(
                         Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                            .clickable(role = Role.Button, onClickLabel = "Add ${product.name} to cart", onClick = onAdd)
-                            .semantics { contentDescription = "Add ${product.name} to cart${if (quantity > 0) ", $quantity in cart" else ""}" },
+                            .clickable(enabled = canAddMore, role = Role.Button, onClickLabel = "Add ${product.name} to cart", onClick = onAdd)
+                            .semantics { contentDescription = if (canAddMore) "Add ${product.name} to cart${if (quantity > 0) ", $quantity in cart" else ""}" else "Maximum quantity of ${product.name} in cart" },
                         contentAlignment = Alignment.Center,
                     ) {
                         Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(SoftRed), contentAlignment = Alignment.Center) {
-                            RushIcon(R.drawable.ic_add_01, null, Modifier.size(20.dp), Coral)
+                            RushIcon(R.drawable.ic_add_01, null, Modifier.size(20.dp), if (canAddMore) Coral else Muted)
                         }
                         if (quantity > 0) {
                             Box(Modifier.align(Alignment.TopEnd).size(18.dp).clip(CircleShape).background(Coral), contentAlignment = Alignment.Center) {
@@ -137,8 +149,6 @@ fun ProductCard(
                             }
                         }
                     }
-                } else {
-                    Text("Unavailable", color = Muted, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

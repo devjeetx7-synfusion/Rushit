@@ -9,6 +9,7 @@ import com.rushit.app.data.auth.AuthResult
 import com.rushit.app.data.auth.SessionResult
 import com.rushit.app.domain.isValidIndianMobile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,13 +50,18 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
     init {
         viewModelScope.launch {
+            // Keep the bounded UI wait separate from a potentially blocking network call. Cancelling
+            // an await must not hold the splash open while HttpURLConnection finishes on IO.
+            val restore = viewModelScope.async { repository.restoreSession() }
             val result = try {
-                withTimeoutOrNull(9_000) { repository.restoreSession() }
+                withTimeoutOrNull(9_000) { restore.await() }
                     ?: SessionResult.Unauthenticated("Session check timed out. Please check your connection and sign in.")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 SessionResult.Unauthenticated("Could not restore your session. Please sign in again.")
+            } finally {
+                if (restore.isActive) restore.cancel()
             }
             _state.update {
                 when (result) {
@@ -126,7 +132,7 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
     /** Browsing never marks a user authenticated or creates a session. */
     fun browseSampleStore() {
-        if (_state.value.busy) return
+        if (_state.value.busy || _state.value.demo) return
         _state.update { it.copy(demo = true, authenticated = false, error = null, notice = null) }
         viewModelScope.launch { _events.send(AuthEvent.OpenHome) }
     }

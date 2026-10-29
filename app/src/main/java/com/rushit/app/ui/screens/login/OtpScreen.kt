@@ -1,6 +1,7 @@
 package com.rushit.app.ui.screens.login
 
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,12 +36,12 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rushit.app.R
+import com.rushit.app.domain.maskedIndianMobile
 import com.rushit.app.ui.components.RoundIconButton
 import com.rushit.app.ui.components.RushButton
 import com.rushit.app.ui.components.RushWordmark
@@ -58,6 +58,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun OtpScreen(state: AuthUiState, onBack: () -> Unit, onOtpChange: (String) -> Unit, onVerify: () -> Unit, onResend: () -> Unit) {
+    BackHandler { if (!state.busy) onBack() }
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(state.resendAfterElapsedMillis) {
         while (now < state.resendAfterElapsedMillis) {
@@ -68,15 +69,18 @@ fun OtpScreen(state: AuthUiState, onBack: () -> Unit, onOtpChange: (String) -> U
     val seconds = ((state.resendAfterElapsedMillis - now + 999) / 1_000).coerceAtLeast(0)
     Column(Modifier.fillMaxSize().background(Cream).imePadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            RoundIconButton(R.drawable.ic_arrow_left_01, "Go back", onBack, background = Peach)
+            RoundIconButton(R.drawable.ic_arrow_left_01, "Go back", onBack, background = Peach, enabled = !state.busy)
             Spacer(Modifier.width(14.dp))
             RushWordmark(Modifier.width(125.dp).height(50.dp))
         }
         Spacer(Modifier.height(52.dp))
         Text("Verify your number", style = MaterialTheme.typography.headlineMedium, color = Ink)
         Spacer(Modifier.height(10.dp))
-        Text("Enter the 6-digit code sent to +91 ${state.phone}.", style = MaterialTheme.typography.bodyLarge, color = Muted)
-        Spacer(Modifier.height(28.dp))
+        Text("Enter the 6-digit code sent to ${maskedIndianMobile(state.phone)}.", style = MaterialTheme.typography.bodyLarge, color = Muted)
+        Text("Change phone number", style = MaterialTheme.typography.labelMedium, color = Coral,
+            modifier = Modifier.clip(CircleShape).clickable(enabled = !state.busy, role = Role.Button, onClick = onBack)
+                .padding(vertical = 10.dp, horizontal = 4.dp))
+        Spacer(Modifier.height(18.dp))
         Text("One-time code", style = MaterialTheme.typography.titleMedium, color = Ink)
         Spacer(Modifier.height(10.dp))
         BasicTextField(
