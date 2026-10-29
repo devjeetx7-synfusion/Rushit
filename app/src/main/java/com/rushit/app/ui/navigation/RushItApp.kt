@@ -291,7 +291,10 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                                 onAssignRider = orders::assignDemoRider,
                                 onCancel = orders::cancelOrder,
                                 onToggleAutoPlay = orders::setDemoAutoPlay,
-                                onViewOrder = { id -> nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true } },
+                                onViewOrder = {
+                                    val id = orderState.order?.id
+                                    if (id != null) nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true }
+                                },
                                 onContinueShopping = { selectMain("home") },
                                 onCelebrationShown = orders::onCelebrationShown,
                                 onRetry = {
