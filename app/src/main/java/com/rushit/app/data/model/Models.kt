@@ -66,15 +66,42 @@ data class Address(
     val longitude: Double? = null,
 )
 
+/** A purchased line, snapshotted so an order keeps its prices if the catalog changes. */
+data class OrderLine(
+    val productId: String,
+    val name: String,
+    val unit: String,
+    val quantity: Int,
+    val unitPricePaise: Long,
+    @DrawableRes val imageRes: Int? = null,
+    val imageUrl: String? = null,
+) {
+    val lineTotalPaise: Long get() = unitPricePaise * quantity
+}
+
+/**
+ * A locally stored order. [isDemo] marks orders created by the sample store, which is the only
+ * order source today: they are real records on this device, but no payment or fulfilment happens.
+ */
 data class Order(
     val id: String,
-    val userId: String,
-    val status: String,
+    val userId: String = "local",
+    val status: OrderStatus = OrderStatus.CONFIRMED,
+    val items: List<OrderLine> = emptyList(),
     val subtotalPaise: Long,
-    val deliveryFeePaise: Long,
-    val discountPaise: Long,
+    val deliveryFeePaise: Long = 0,
+    val platformFeePaise: Long = 0,
+    val discountPaise: Long = 0,
     val totalPaise: Long,
     val createdAt: String,
-)
+    val updatedAt: String = createdAt,
+    val mode: ShoppingMode = ShoppingMode.GROCERY,
+    val addressSummary: String? = null,
+    val isDemo: Boolean = true,
+    /** Set once the celebration has been shown, so reopening never replays it. */
+    val celebratedAt: String? = null,
+) {
+    val itemCount: Int get() = items.sumOf { it.quantity }
+}
 
 data class Catalog(val categories: List<Category>, val products: List<Product>, val isSample: Boolean)

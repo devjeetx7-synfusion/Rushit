@@ -11,6 +11,7 @@ import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.RushItTheme
 import com.rushit.app.ui.viewmodel.AuthViewModel
+import com.rushit.app.ui.viewmodel.OrderViewModel
 import com.rushit.app.ui.viewmodel.ShopViewModel
 import androidx.compose.ui.graphics.toArgb
 
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
     private val app get() = application as RushItApplication
     private val auth: AuthViewModel by viewModels { AuthViewModel.factory(app.authRepository) }
     private val shop: ShopViewModel by viewModels { ShopViewModel.factory(applicationContext, app.catalogRepository) }
+    private val orders: OrderViewModel by viewModels { OrderViewModel.factory(app.orderRepository) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +31,6 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true
         }
-        setContent { RushItTheme { RushItApp(auth, shop) } }
+        setContent { RushItTheme { RushItApp(auth, shop, orders) } }
     }
 }

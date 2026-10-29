@@ -44,16 +44,64 @@ import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
+import com.rushit.app.domain.formatPrice
 import com.rushit.app.ui.viewmodel.AuthUiState
+import com.rushit.app.ui.viewmodel.OrderUiState
 import com.rushit.app.ui.viewmodel.ShopUiState
 
 @Composable
-fun OrdersScreen(onHome: () -> Unit, onTracking: () -> Unit) {
+fun OrdersScreen(
+    state: OrderUiState,
+    onHome: () -> Unit,
+    onOpenOrder: (String) -> Unit,
+    onTracking: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("Orders", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 22.dp))
-        MessageCard("Your orders, all in one place", "Order history isn't connected yet. There are no live orders to show.", action = "Explore the catalog", onAction = onHome)
-        Spacer(Modifier.height(10.dp))
-        AccountRow(R.drawable.ic_package_01, "Order tracking", "Tracking is not connected yet", onTracking)
+        Text("Orders", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 18.dp))
+        if (state.orders.isEmpty()) {
+            MessageCard(
+                "Your orders, all in one place",
+                "No orders have been placed from this device yet. Orders created here are demo orders, not live purchases.",
+                action = "Explore the catalog",
+                onAction = onHome,
+            )
+        } else {
+            Text(
+                "Stored on this device · demo orders",
+                style = MaterialTheme.typography.bodySmall,
+                color = Muted,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+            state.orders.forEach { order ->
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = CardWhite,
+                    border = BorderStroke(1.dp, Border),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenOrder(order.id) }.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(42.dp).clip(CircleShape).background(Peach), contentAlignment = Alignment.Center) {
+                            RushIcon(R.drawable.ic_package_01, null, Modifier.size(22.dp), Coral)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Order #${order.id}", style = MaterialTheme.typography.titleMedium, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${order.status.label} · ${order.itemCount} ${if (order.itemCount == 1) "item" else "items"} · ${formatPrice(order.totalPaise)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Muted,
+                            )
+                        }
+                        RushIcon(R.drawable.ic_arrow_right_01, null, Modifier.size(20.dp), Coral)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_location_01, "Order tracking", "Follow your latest order", onTracking)
     }
 }
 
