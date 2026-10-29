@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -93,9 +94,11 @@ fun OrderJourneyScreen(
             }
             else -> {
                 val scene = state.scene ?: JourneyScene.PACKING
+                // Decided once per order: persisting "celebrated" right away must not restart the scene.
+                val announceCelebration = remember(order.id) { state.showCelebration }
                 // Persist "celebrated" as soon as the delivered scene is actually shown.
-                LaunchedEffect(scene, order.id, state.showCelebration) {
-                    if (scene == JourneyScene.DELIVERED && state.showCelebration) onCelebrationShown()
+                LaunchedEffect(scene, order.id, announceCelebration) {
+                    if (scene == JourneyScene.DELIVERED && announceCelebration) onCelebrationShown()
                 }
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                     if (order.isDemo) DemoOrderBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -124,7 +127,7 @@ fun OrderJourneyScreen(
                                 JourneyScene.ALMOST_THERE -> AlmostThereScene(order)
                                 JourneyScene.DELIVERED -> DeliveredScene(
                                     order = order,
-                                    celebrate = state.showCelebration,
+                                    celebrate = announceCelebration,
                                     onViewOrder = onViewOrder,
                                     onContinueShopping = onContinueShopping,
                                 )
@@ -215,7 +218,6 @@ private fun StatusCard(state: OrderUiState) {
                     color = when (order.status) {
                         OrderStatus.DELIVERED -> Success
                         OrderStatus.CANCELLED, OrderStatus.FAILED -> Muted
-                        OrderStatus.ARRIVING -> Coral
                         else -> Coral
                     },
                 )

@@ -319,7 +319,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     }
                     composable("tracking") {
                         if (!needsStartupRoute) {
-                            orders.refreshOrders()
+                            LaunchedEffect(Unit) { orders.refreshOrders() }
                             TrackingScreen(
                                 orders = orderState.orders,
                                 onBack = { nav.popBackStack() },
