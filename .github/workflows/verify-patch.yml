@@ -1,0 +1,64 @@
+name: Verify applied patch (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Unit tests, debug build and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the selected ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Run unit tests and build the debug APK
+        shell: bash
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+
+      - name: Run Android lint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: ./gradlew :app:lintDebug --no-daemon --console=plain
+
+      - name: Summarise lint findings
+        if: always()
+        shell: bash
+        run: |
+          report=app/build/reports/lint-results-debug.xml
+          if [[ -f "$report" ]]; then
+            echo "Lint errors: $(grep -c 'severity="Error"' "$report" || true)"
+            echo "Lint warnings: $(grep -c 'severity="Warning"' "$report" || true)"
+            python3 -c 'import sys, xml.etree.ElementTree as ET; root = ET.parse(sys.argv[1]).getroot(); [print("ERROR", i.get("id"), ":", i.get("message"), "@", (i.find("location").get("file") if i.find("location") is not None else "?")) for i in root.iter("issue") if i.get("severity") == "Error"]' "$report"
+          else
+            echo "No lint XML report was produced."
+          fi
+
+      - name: Upload reports and APK
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RushIt-verify-reports
+          if-no-files-found: warn
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.*
+            app/build/outputs/apk/debug/app-debug.apk
