@@ -31,7 +31,6 @@ import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.DeepRed
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Leaf
-import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.Success
 
 /**
@@ -478,13 +477,5 @@ private fun MapChip(label: String, modifier: Modifier = Modifier) {
             color = Ink,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
         )
-    }
-}
-
-/** Small decorative leaves used behind illustrations. */
-@Composable
-fun SoftGlow(modifier: Modifier = Modifier, color: Color = Peach) {
-    Canvas(modifier) {
-        drawCircle(Brush.radialGradient(listOf(color.copy(alpha = 0.55f), Color.Transparent)), radius = size.minDimension * 0.5f)
     }
 }

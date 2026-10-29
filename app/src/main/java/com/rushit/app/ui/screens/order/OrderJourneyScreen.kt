@@ -69,6 +69,7 @@ fun OrderJourneyScreen(
     onViewOrder: () -> Unit,
     onContinueShopping: () -> Unit,
     onCelebrationShown: () -> Unit,
+    onConfirmationDismissed: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val reduced = LocalReducedMotion.current
@@ -99,7 +100,16 @@ fun OrderJourneyScreen(
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                     if (order.isDemo) DemoOrderBanner(Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
 
-                    AnimatedContent(
+                    if (state.justPlaced) {
+                        // Shown once, immediately after the repository stored the order.
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            OrderConfirmedScene(
+                                order = order,
+                                onTrack = onConfirmationDismissed,
+                                onContinueShopping = onContinueShopping,
+                            )
+                        }
+                    } else AnimatedContent(
                         targetState = scene,
                         transitionSpec = { fadeIn(tween(if (reduced) 0 else 260)) togetherWith fadeOut(tween(if (reduced) 0 else 180)) },
                         label = "journey scene",
@@ -109,7 +119,7 @@ fun OrderJourneyScreen(
                                 JourneyScene.AWAITING_CONFIRMATION -> PackingScene(order, order.status)
                                 JourneyScene.PACKING -> PackingScene(order, order.status)
                                 JourneyScene.FINDING_RIDER -> FindingRiderScene()
-                                JourneyScene.RIDER_READY -> RiderReadyScene(order, null)
+                                JourneyScene.RIDER_READY -> RiderReadyScene(order)
                                 JourneyScene.ON_THE_WAY -> OnTheWayScene(order)
                                 JourneyScene.ALMOST_THERE -> AlmostThereScene(order)
                                 JourneyScene.DELIVERED -> DeliveredScene(

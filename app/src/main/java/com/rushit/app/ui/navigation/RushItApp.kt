@@ -93,7 +93,6 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     LaunchedEffect(placedOrderId) {
         val id = placedOrderId ?: return@LaunchedEffect
         shop.clearCart()
-        orders.clearConfirmationFlag()
         orders.refreshOrders()
         nav.navigate("journey/${Uri.encode(id)}") {
             popUpTo("cart") { inclusive = true }
@@ -297,6 +296,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                                 },
                                 onContinueShopping = { selectMain("home") },
                                 onCelebrationShown = orders::onCelebrationShown,
+                                onConfirmationDismissed = orders::clearConfirmationFlag,
                                 onRetry = {
                                     val id = backStackEntry.arguments?.getString("id")
                                     if (id != null) orders.open(id)

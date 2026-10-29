@@ -249,7 +249,7 @@ fun FindingRiderScene() {
 
 /** Rider ready / assigned: scooter idling in the city. */
 @Composable
-fun RiderReadyScene(order: Order, onAdvancePreview: (() -> Unit)?) {
+fun RiderReadyScene(order: Order) {
     val reduced = LocalReducedMotion.current
     val transition = rememberInfiniteTransition(label = "idle wheels")
     val wheel by transition.animateFloat(

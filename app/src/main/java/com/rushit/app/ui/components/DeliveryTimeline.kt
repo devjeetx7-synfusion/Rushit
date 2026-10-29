@@ -41,7 +41,6 @@ import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.LocalReducedMotion
 import com.rushit.app.ui.theme.Muted
-import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.Success
 
 /**
@@ -150,10 +149,4 @@ fun StatusPill(text: String, color: Color = Success, modifier: Modifier = Modifi
         Box(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.labelSmall, color = color)
     }
-}
-
-/** Placeholder shimmer-free empty illustration for cancelled/failed orders. */
-@Composable
-fun NeutralArt(color: Color = Peach, modifier: Modifier = Modifier) {
-    Box(modifier.clip(CircleShape).background(color))
 }

@@ -21,12 +21,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -287,20 +285,4 @@ fun TrackingScreen(
             }
         }
     }
-}
-
-/** Small inline progress used while an order is being created. */
-@Composable
-fun InlineLoading(text: String, modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Coral)
-        Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = Muted)
-    }
-}
-
-/** Kept for callers that only need a simple text action. */
-@Composable
-fun CheckoutHelpAction(onClick: () -> Unit) {
-    TextButton(onClick = onClick) { Text("Need help?", color = Coral, style = MaterialTheme.typography.labelMedium) }
 }

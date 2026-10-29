@@ -231,16 +231,6 @@ class OrderViewModel internal constructor(
         }
     }
 
-    fun clearError() {
-        _state.update { it.copy(error = null, transitionError = null) }
-    }
-
-    fun reset() {
-        demoJob?.cancel()
-        demoJob = null
-        _state.value = OrderUiState()
-    }
-
     companion object {
         const val DEMO_STEP_MILLIS = 3_200L
 
