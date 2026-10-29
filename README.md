@@ -1,1 +1,59 @@
-# Rushit
+# RushIt
+
+RushIt is an initial Android/Jetpack Compose quick-commerce app, built around the supplied cream, coral and peach reference. The repository originally contained only this README; there was no existing Android project, approved logo or backend configuration.
+
+## What is included
+
+- An animated, session-aware splash; a phone login and real OTP-verification flow; and a scrollable grocery home.
+- A clearly marked **sample store** that can be browsed without signing in. Its products, stock and prices are illustrative, not live. It does not place orders.
+- Search by product or category, category and bestseller listings, cart quantities and calculated totals, and a locally persisted wishlist. The cart is retained while navigating but is currently in memory only.
+- A locally saved delivery-address prompt, a notification empty state, and useful Orders and Account screens. No location, delivery estimate, policy URL, SMS success or inventory is invented.
+- A Supabase Auth REST implementation behind `AuthRepository`, with session verification/refresh, Android Keystore-encrypted token storage, duplicate-request protection, and network/error handling. The sample catalog is behind `CatalogRepository`; no database schema is assumed or queried.
+
+The reference-inspired wordmark is a **reconstruction**, not an approved production logo. Replace `res/drawable-nodpi/rushit_wordmark.webp` and the decorative splash artwork when an approved RushIt asset is available. Grocery/rider/product illustrations are generated for this project. The rounded outline vectors are converted from the MIT-licensed free Hugeicons set. Font and icon licenses are in `licenses/`.
+
+## Build
+
+Install JDK 17, Android SDK Platform 34 and Android SDK Build-Tools 34.0.0. Android Studio Koala or later can manage these. Gradle needs access to Google Maven, Maven Central and the Gradle distribution service.
+
+```sh
+./gradlew assembleDebug
+./gradlew testDebugUnitTest
+```
+
+The debug APK, when the build succeeds, is at `app/build/outputs/apk/debug/app-debug.apk`. The project uses Gradle 8.7, Android Gradle Plugin 8.5.2, Kotlin 1.9.24 and Compose compiler 1.5.14.
+
+## Configure phone authentication
+
+No credentials are committed. Add the following to the **ignored** root `local.properties` (or supply them as Gradle properties/environment variables in your own build environment):
+
+```properties
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY
+# Optional; use real HTTPS destinations owned by your organization:
+RUSHIT_TERMS_URL=https://YOUR_REAL_TERMS_URL
+RUSHIT_PRIVACY_URL=https://YOUR_REAL_PRIVACY_URL
+```
+
+1. Enable Phone authentication in the Supabase project, configure an SMS provider and use a six-digit OTP. Configure rate limits and other abuse protections appropriate for production.
+2. Use **only** the public anon/publishable client key. A key in an Android APK is extractable; never put a service-role key, `sb_secret_` key, SMS-provider secret or other privileged secret in the app. The build rejects recognizable service-role and secret keys.
+3. Configure Row Level Security and policies before adding any real product, address, order or user data. This milestone does not create tables or make assumptions about a Supabase schema.
+4. Supply genuine policy URLs when available. Until then the links open an explanatory dialog. The Help button also opens guidance instead of an invented contact destination.
+
+Without Supabase configuration, continuing with a valid number displays an actionable configuration error; it does **not** navigate as if an SMS or sign-in had succeeded. The sample-store entry remains available. When configured, OTP requests go to Supabase's `/auth/v1/otp` and `/auth/v1/verify` endpoints; a session is saved only after successful verification. On launch, the stored session is checked with `/auth/v1/user` and refreshed when necessary. Tokens are encrypted with an Android Keystore key and excluded from backup. A network failure during sign-out clears the local session but reports that server revocation could not be confirmed.
+
+## Verification and current limitations
+
+- Unit tests cover phone validation, cart arithmetic, search and the auth ViewModel/repository success and failure paths. Run them with the Gradle command above on a properly provisioned machine.
+- An offline JVM run passed 5 domain tests and 6 Supabase-repository tests, plus 6 ViewModel checks using lifecycle/clock stubs. These are not a device or full Gradle test run.
+- In the implementation sandbox, `assembleDebug` and `testDebugUnitTest` could not resolve `com.android.application:8.5.2` because outbound access to Google Maven/Maven Central was blocked. A full Android/Compose build is therefore **not verified** there. Android resources were independently compiled and linked with `aapt2`, and the Kotlin sources received an offline type check using cached AndroidX artifacts and limited stubs; this is not a substitute for a Gradle build.
+- There was no emulator or attached device in the sandbox, so actual screen rendering, navigation, cutouts, system-bar modes, font scaling and keyboard behavior have not been device-tested or compared by screenshot. Test those on small, standard and large devices before release.
+- No real Supabase project/SMS provider was supplied, so end-to-end SMS delivery, session restore against a real project, and server-side policies have not been tested.
+- Catalog, wishlist, address, cart and order screens are not connected to a backend; address and wishlist are device-local, and cart contents do not survive process death. Order history, notifications, checkout, live availability and delivery fees are intentionally not implemented. Google sign-in and image search are not presented as nonfunctional controls.
+
+### Suggested device smoke test
+
+1. Launch with and without a real existing session; confirm splash routing and offline error handling.
+2. Try short/invalid numbers, a valid number, a failed OTP request, and a successful SMS/verification with a configured provider. Confirm keyboard and large-text layouts remain usable.
+3. Browse the sample store, search by name/category, open each category and bestseller listing, add the same product more than once, change quantities in the cart, toggle a wishlist heart, and navigate between all four tabs.
+4. Change/remove the local address and open Help, policy links and Notifications. Check gesture and three-button navigation, display cutouts and larger font scales.
