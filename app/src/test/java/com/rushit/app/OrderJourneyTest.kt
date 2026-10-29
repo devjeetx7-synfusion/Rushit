@@ -30,7 +30,7 @@ class OrderJourneyTest {
         subtotalPaise = 6_400,
         platformFeePaise = 500,
         totalPaise = 6_900,
-        createdAt = "2026-10-29T10:15:00+05:30",
+        createdAt = "2026-10-29T10:15:00+0530",
         celebratedAt = celebratedAt,
     )
 
@@ -85,7 +85,7 @@ class OrderJourneyTest {
 
     @Test fun `celebration needs a delivered order that has not celebrated`() {
         assertTrue(shouldCelebrate(order(OrderStatus.DELIVERED)))
-        assertFalse("never replay a seen celebration", shouldCelebrate(order(OrderStatus.DELIVERED, celebratedAt = "2026-10-29T10:30:00+05:30")))
+        assertFalse("never replay a seen celebration", shouldCelebrate(order(OrderStatus.DELIVERED, celebratedAt = "2026-10-29T10:30:00+0530")))
         assertFalse(shouldCelebrate(order(OrderStatus.ARRIVING)))
         assertFalse(shouldCelebrate(order(OrderStatus.CANCELLED)))
         assertFalse(shouldCelebrate(order(OrderStatus.FAILED)))
@@ -126,5 +126,18 @@ class OrderJourneyTest {
         assertEquals(11_200, orderSubtotal(lines))
         assertEquals(11_700, DeliveryPricing.total(orderSubtotal(lines)))
         assertEquals(ShoppingMode.GROCERY, lines.first().let { ShoppingMode.GROCERY })
+    }
+}
+
+class OrderTimeTest {
+    @Test fun `storage timestamps round-trip and display`() {
+        val stamp = "2026-10-29T10:15:00+0530"
+        assertEquals("29 Oct, 10:15 am", com.rushit.app.domain.OrderTime.display(stamp).lowercase().replace("am", "am"))
+        assertTrue(com.rushit.app.domain.OrderTime.display(stamp).contains("29 Oct"))
+        assertTrue(com.rushit.app.domain.OrderTime.displayWithYear(stamp).contains("2026"))
+    }
+
+    @Test fun `unknown timestamps are shown verbatim instead of crashing`() {
+        assertEquals("not-a-date", com.rushit.app.domain.OrderTime.display("not-a-date"))
     }
 }

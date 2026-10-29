@@ -52,7 +52,7 @@ class OrderViewModel internal constructor(
     private val now: () -> String,
 ) : ViewModel() {
 
-    constructor(repository: OrderRepository) : this(repository, { java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(java.time.OffsetDateTime.now()) })
+    constructor(repository: OrderRepository) : this(repository, { com.rushit.app.domain.OrderTime.now() })
 
     private val _state = MutableStateFlow(OrderUiState())
     val state = _state.asStateFlow()

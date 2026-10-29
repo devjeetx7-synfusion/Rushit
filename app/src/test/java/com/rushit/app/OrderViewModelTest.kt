@@ -55,7 +55,7 @@ class OrderViewModelTest {
                 platformFeePaise = draft.platformFeePaise,
                 deliveryFeePaise = draft.deliveryFeePaise,
                 totalPaise = subtotal + draft.platformFeePaise + draft.deliveryFeePaise,
-                createdAt = "2026-10-29T10:15:00+05:30",
+                createdAt = "2026-10-29T10:15:00+0530",
                 mode = draft.mode,
                 addressSummary = draft.addressSummary,
             )
@@ -207,7 +207,7 @@ class OrderViewModelTest {
             items = emptyList(),
             subtotalPaise = 0,
             totalPaise = 0,
-            createdAt = "2026-10-29T10:15:00+05:30",
+            createdAt = "2026-10-29T10:15:00+0530",
             isDemo = false,
         )
         repo.stored[real.id] = real
@@ -226,7 +226,7 @@ class OrderViewModelTest {
         val repo = FakeOrderRepository()
         repo.stored["REAL1"] = Order(
             id = "REAL1", status = OrderStatus.OUT_FOR_DELIVERY, items = emptyList(),
-            subtotalPaise = 0, totalPaise = 0, createdAt = "2026-10-29T10:15:00+05:30", isDemo = false,
+            subtotalPaise = 0, totalPaise = 0, createdAt = "2026-10-29T10:15:00+0530", isDemo = false,
         )
         val vm = OrderViewModel(repo)
         vm.open("REAL1")

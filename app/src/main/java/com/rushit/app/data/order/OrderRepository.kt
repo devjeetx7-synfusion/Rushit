@@ -5,6 +5,7 @@ import com.rushit.app.data.model.Order
 import com.rushit.app.data.model.OrderLine
 import com.rushit.app.data.model.OrderStatus
 import com.rushit.app.data.model.ShoppingMode
+import com.rushit.app.domain.OrderTime
 import com.rushit.app.domain.orderSubtotal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,7 +53,7 @@ internal class PreferencesOrderStore(context: Context) : OrderStore {
  */
 class LocalOrderRepository internal constructor(
     private val store: OrderStore,
-    private val now: () -> String = { java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(java.time.OffsetDateTime.now()) },
+    private val now: () -> String = { OrderTime.now() },
     private val newId: () -> String = { "RI" + (100_000_000 + (0..899_999_999).random()).toString() },
 ) : OrderRepository {
 

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.rushit.app.R
 import com.rushit.app.data.model.Order
 import com.rushit.app.data.model.OrderStatus
+import com.rushit.app.domain.OrderTime
 import com.rushit.app.domain.formatPrice
 import com.rushit.app.domain.stageIndex
 import com.rushit.app.ui.components.CatalogImage
@@ -176,7 +177,7 @@ private fun HeaderCard(order: Order, onHelp: () -> Unit, onTrack: (String) -> Un
                 StatusPill(if (order.isDemo) "Demo" else "Live", color = if (order.isDemo) Coral else Success)
             }
             Spacer(Modifier.height(8.dp))
-            Text("Placed ${order.createdAt.toReadable()}", style = MaterialTheme.typography.bodySmall, color = Muted)
+            Text("Placed ${OrderTime.displayWithYear(order.createdAt)}", style = MaterialTheme.typography.bodySmall, color = Muted)
         }
     }
 }
@@ -199,8 +200,3 @@ private fun BillRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium, color = Ink)
     }
 }
-
-internal fun String.toReadable(): String = runCatching {
-    val parsed = java.time.OffsetDateTime.parse(this)
-    java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withLocale(java.util.Locale.getDefault()).format(parsed)
-}.getOrElse { take(19).replace('T', ' ') }

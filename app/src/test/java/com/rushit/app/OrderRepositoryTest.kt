@@ -30,7 +30,7 @@ class OrderRepositoryTest {
     )
 
     private fun repository(store: OrderStore = MemoryStore()): Pair<LocalOrderRepository, OrderStore> {
-        val order = LocalOrderRepository(store, now = { "2026-10-29T10:15:00+05:30" }, newId = LocalOrderRepository.fixedIds("RI"))
+        val order = LocalOrderRepository(store, now = { "2026-10-29T10:15:00+0530" }, newId = LocalOrderRepository.fixedIds("RI"))
         return order to store
     }
 
@@ -89,9 +89,9 @@ class OrderRepositoryTest {
     @Test fun `celebration is recorded once`() = runBlocking {
         val (repo, _) = repository()
         val order = repo.placeOrder(draft()).getOrThrow()
-        val first = repo.markCelebrated(order.id, "2026-10-29T10:30:00+05:30").getOrThrow()
-        val second = repo.markCelebrated(order.id, "2026-10-29T11:00:00+05:30").getOrThrow()
-        assertEquals("2026-10-29T10:30:00+05:30", first.celebratedAt)
+        val first = repo.markCelebrated(order.id, "2026-10-29T10:30:00+0530").getOrThrow()
+        val second = repo.markCelebrated(order.id, "2026-10-29T11:00:00+0530").getOrThrow()
+        assertEquals("2026-10-29T10:30:00+0530", first.celebratedAt)
         assertEquals("a second visit must not move the timestamp", first.celebratedAt, second.celebratedAt)
     }
 

@@ -46,6 +46,7 @@ import com.rushit.app.R
 import com.rushit.app.data.model.Order
 import com.rushit.app.data.model.OrderStatus
 import com.rushit.app.data.model.ShoppingMode
+import com.rushit.app.domain.OrderTime
 import com.rushit.app.ui.components.CatalogImage
 import com.rushit.app.ui.components.CityBackdrop
 import com.rushit.app.ui.components.Confetti
@@ -134,7 +135,7 @@ fun OrderConfirmedScene(order: Order, onTrack: () -> Unit, onContinueShopping: (
             Surface(shape = RoundedCornerShape(16.dp), color = CardWhite, border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
                 Column(Modifier.padding(horizontal = 22.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Order #${order.id}", style = MaterialTheme.typography.titleMedium, color = Ink)
-                    Text(order.createdAt.toDisplayTime(), style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text(OrderTime.display(order.createdAt), style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -453,13 +454,5 @@ fun TerminalOrderScene(
             Text("Continue shopping", color = DeepRed, style = MaterialTheme.typography.labelMedium)
         }
     }
-}
-
-private fun String.toDisplayTime(): String {
-    val raw = this
-    return runCatching {
-        val parsed = java.time.OffsetDateTime.parse(raw)
-        java.time.format.DateTimeFormatter.ofPattern("d MMM, h:mm a").withLocale(java.util.Locale.getDefault()).format(parsed)
-    }.getOrElse { raw.take(19).replace('T', ' ') }
 }
 
