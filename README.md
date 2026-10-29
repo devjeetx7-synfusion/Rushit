@@ -4,13 +4,15 @@ RushIt is an initial Android/Jetpack Compose quick-commerce app, built around th
 
 ## What is included
 
-- An animated, session-aware splash; a phone login and real OTP-verification flow; and a scrollable grocery home.
-- A clearly marked **sample store** that can be browsed without signing in. Its products, stock and prices are illustrative, not live. It does not place orders.
-- Search by product or category, category and bestseller listings, cart quantities and calculated totals, and a locally persisted wishlist. The cart is retained while navigating but is currently in memory only.
-- A locally saved delivery-address prompt, a notification empty state, and useful Orders and Account screens. No location, delivery estimate, policy URL, SMS success or inventory is invented.
+- A session-aware, animated splash with visible first-frame artwork and a bounded session check; a keyboard-safe phone login and real OTP-verification flow.
+- A clearly marked **sample store** that can be browsed without signing in. Food & Grocery uses the existing sample products; E-commerce has two non-purchasable preview listings; Gifts & More has preview categories but no configured inventory. Prices are illustrative and none of these modes places orders.
+- A shared, accessible mode selector on Home and Categories. The selected mode is saved locally, while each mode's cart is kept separately in memory as you navigate or switch modes. Carts do not survive process death. The wishlist is saved locally across modes.
+- Debounced mode-specific search (including locally saved, clearable recent searches), category filters and sorting, product details, cart quantities and calculated subtotals.
+- Device-local delivery addresses can be added, edited, selected and removed. Users may explicitly request approximate location while entering an address; a permission prompt appears only after that action. Coordinates are optional, are stored in app-private preferences with the address, and are not reverse-geocoded into a fabricated address. Address and search data are not encrypted or sent to a RushIt backend by the app; app backup is disabled.
+- Checkout is a review-only screen with order placement disabled; Orders and Tracking provide honest unconfigured states. Notifications, live inventory, serviceability, delivery fees, payment and real order history are not connected.
 - A Supabase Auth REST implementation behind `AuthRepository`, with session verification/refresh, Android Keystore-encrypted token storage, duplicate-request protection, and network/error handling. The sample catalog is behind `CatalogRepository`; no database schema is assumed or queried.
 
-The reference-inspired wordmark is a **reconstruction**, not an approved production logo. Replace `res/drawable-nodpi/rushit_wordmark.webp` and the decorative splash artwork when an approved RushIt asset is available. Grocery/rider/product illustrations are generated for this project. The rounded outline vectors are converted from the MIT-licensed free Hugeicons set. Font and icon licenses are in `licenses/`.
+The reference-inspired wordmark is a **reconstruction**, not an approved production logo. Replace `res/drawable-nodpi/rushit_wordmark.webp` and the decorative splash artwork when an approved RushIt asset is available. Grocery, e-commerce, gift, rider and product illustrations are generated for this project. The rounded outline vectors are converted from the MIT-licensed free Hugeicons set. Font and icon licenses are in `licenses/`.
 
 ## Build
 
@@ -62,17 +64,16 @@ Without Supabase configuration, continuing with a valid number displays an actio
 
 ## Verification and current limitations
 
-- The updated no-secret workflow and full Gradle build require a successful GitHub Actions run before the resulting APK can be considered verified.
-- Unit tests cover phone validation, cart arithmetic, search and the auth ViewModel/repository success and failure paths. Run them with the Gradle command above on a properly provisioned machine.
-- An offline JVM run passed 5 domain tests and 6 Supabase-repository tests, plus 6 ViewModel checks using lifecycle/clock stubs. These are not a device or full Gradle test run.
-- In the implementation sandbox, `assembleDebug` and `testDebugUnitTest` could not resolve `com.android.application:8.5.2` because outbound access to Google Maven/Maven Central was blocked. A full Android/Compose build is therefore **not verified** there. Android resources were independently compiled and linked with `aapt2`, and the Kotlin sources received an offline type check using cached AndroidX artifacts and limited stubs; this is not a substitute for a Gradle build.
-- There was no emulator or attached device in the sandbox, so actual screen rendering, navigation, cutouts, system-bar modes, font scaling and keyboard behavior have not been device-tested or compared by screenshot. Test those on small, standard and large devices before release.
+- A GitHub Actions run on this branch completed `./gradlew :app:testDebugUnitTest :app:assembleDebug` with JDK 17 and Android SDK 34: all 26 JVM unit tests passed, including the startup-timeout and cancelled-restore regressions, and a debug APK was produced. This is a headless Linux CI build, not a device test.
+- `:app:lintDebug` finishes with one pre-existing `NewApi` error and 11 warnings. The error is `android:windowLightNavigationBar` in `res/values/themes.xml`, which requires API 27 while `minSdk` is 24. The platform ignores that attribute below API 27 and `MainActivity` applies the navigation-bar appearance at runtime, so it does not affect `assembleDebug`. Moving the item to a `values-v27` override or annotating it with `tools:targetApi="27"` would clear it.
+- No emulator or attached device was available. Actual splash rendering, navigation, small-screen and large-text layouts, keyboard, location permission, cutouts, system bars, accessibility and screenshots remain unverified on device.
 - No real Supabase project/SMS provider was supplied, so end-to-end SMS delivery, session restore against a real project, and server-side policies have not been tested.
-- Catalog, wishlist, address, cart and order screens are not connected to a backend; address and wishlist are device-local, and cart contents do not survive process death. Order history, notifications, checkout, live availability and delivery fees are intentionally not implemented. Google sign-in and image search are not presented as nonfunctional controls.
+- Catalog, wishlist, address, cart and order screens are not connected to a backend; addresses, recent searches, selected mode and wishlist are device-local, and carts do not survive process death. Order history, notifications, checkout, live availability and delivery fees are intentionally unavailable. Google sign-in and image search are not presented as nonfunctional controls.
 
 ### Suggested device smoke test
 
-1. Launch with and without a real existing session; confirm splash routing and offline error handling.
-2. Try short/invalid numbers, a valid number, a failed OTP request, and a successful SMS/verification with a configured provider. Confirm keyboard and large-text layouts remain usable.
-3. Browse the sample store, search by name/category, open each category and bestseller listing, add the same product more than once, change quantities in the cart, toggle a wishlist heart, and navigate between all four tabs.
-4. Change/remove the local address and open Help, policy links and Notifications. Check gesture and three-button navigation, display cutouts and larger font scales.
+1. Launch with and without a real existing session, and on a slow/offline connection; confirm visible splash artwork and one correct route without a long hang.
+2. Try short/invalid numbers, a valid number, failed and successful OTP requests, verification and resend with a configured provider. Confirm that Help, policy links, back/change-number and duplicate-request guards behave correctly.
+3. Browse all three modes and their categories; confirm demo and empty states, product details, search/filter/sort, wishlist, separate cart retention and computed totals. Review checkout and confirm that no payment or order is possible.
+4. Add, edit, select and remove a local address; request, deny and grant approximate location, disable location services, and verify the manual-entry fallback. Open Orders, Tracking and Notifications.
+5. Repeat on small and large displays, with the keyboard open and larger font scales, both gesture and three-button navigation, and display cutouts. Capture screenshots and compare them against the references.

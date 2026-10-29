@@ -6,19 +6,30 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.rushit.app.data.model.Category
 import com.rushit.app.data.model.Product
+import com.rushit.app.data.model.SavedAddress
+import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.data.repository.CatalogRepository
 import com.rushit.app.domain.CartTotals
 import com.rushit.app.domain.cartTotals
-import com.rushit.app.domain.updateCart
-import kotlinx.coroutines.flow.collect
+import com.rushit.app.domain.isValidDeliveryAddress
+import com.rushit.app.domain.recentSearches
+import com.rushit.app.domain.updateModeCart
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 data class ShopUiState(
     val loading: Boolean = true,
@@ -26,25 +37,45 @@ data class ShopUiState(
     val isSample: Boolean = true,
     val categories: List<Category> = emptyList(),
     val products: List<Product> = emptyList(),
-    val cart: Map<String, Int> = emptyMap(),
+    val selectedMode: ShoppingMode = ShoppingMode.GROCERY,
+    val carts: Map<ShoppingMode, Map<String, Int>> = emptyMap(),
     val wishlist: Set<String> = emptySet(),
-    val address: String? = null,
+    val addresses: List<SavedAddress> = emptyList(),
+    val selectedAddressId: String? = null,
     val searchInput: String = "",
     val searchQuery: String = "",
+    val searchCategoryId: String? = null,
+    val recentSearches: List<String> = emptyList(),
 ) {
+    val cart: Map<String, Int> get() = carts[selectedMode].orEmpty()
     val totals: CartTotals get() = cartTotals(cart, products)
+    val selectedAddress: SavedAddress? get() = addresses.firstOrNull { it.id == selectedAddressId }
+    val address: String? get() = selectedAddress?.summary
+    fun quantityFor(product: Product): Int = carts[product.mode]?.get(product.id) ?: 0
 }
 
 @OptIn(FlowPreview::class)
 class ShopViewModel(context: Context, private val repository: CatalogRepository) : ViewModel() {
     private val prefs = context.applicationContext.getSharedPreferences("rushit_store", Context.MODE_PRIVATE)
+    private val initialMode = runCatching {
+        ShoppingMode.valueOf(prefs.getString("shopping_mode", ShoppingMode.GROCERY.name).orEmpty())
+    }.getOrDefault(ShoppingMode.GROCERY)
+    private val initialAddresses = readAddresses(prefs.getString("addresses", null)).ifEmpty {
+        prefs.getString("address", null)?.takeIf { it.isNotBlank() }
+            ?.let { listOf(SavedAddress("legacy", "Saved", it, "", "")) }.orEmpty()
+    }
     private val _state = MutableStateFlow(
         ShopUiState(
+            selectedMode = initialMode,
             wishlist = prefs.getStringSet("wishlist", emptySet()).orEmpty().toSet(),
-            address = prefs.getString("address", null),
+            addresses = initialAddresses,
+            selectedAddressId = prefs.getString("selected_address_id", null)
+                ?.takeIf { id -> initialAddresses.any { it.id == id } } ?: initialAddresses.firstOrNull()?.id,
+            recentSearches = readRecent(initialMode),
         )
     )
     val state = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     init {
         loadCatalog()
@@ -56,9 +87,16 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
     }
 
     fun loadCatalog() {
+        if (loadJob?.isActive == true) return
         _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
-            val result = try { repository.loadCatalog() } catch (_: Exception) { Result.failure(IllegalStateException()) }
+        loadJob = viewModelScope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) { repository.loadCatalog() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Result.failure(IllegalStateException())
+            }
             result.fold(
                 onSuccess = { catalog ->
                     _state.update {
@@ -71,29 +109,102 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
         }
     }
 
+    fun selectMode(mode: ShoppingMode) {
+        if (_state.value.selectedMode == mode) return
+        prefs.edit().putString("shopping_mode", mode.name).apply()
+        _state.update { it.copy(selectedMode = mode, searchInput = "", searchQuery = "", searchCategoryId = null, recentSearches = readRecent(mode)) }
+    }
+
     fun changeQuantity(productId: String, delta: Int) {
         val product = _state.value.products.firstOrNull { it.id == productId } ?: return
-        if (delta > 0 && (!product.isAvailable || product.stockQuantity == 0)) return
-        val maximum = product.stockQuantity?.coerceIn(0, 99) ?: 99
-        _state.update { it.copy(cart = updateCart(it.cart, productId, delta, maximum)) }
+        _state.update { it.copy(carts = updateModeCart(it.carts, product, delta)) }
     }
 
     fun toggleWishlist(productId: String) {
         if (_state.value.products.none { it.id == productId }) return
         _state.update {
             val updated = if (productId in it.wishlist) it.wishlist - productId else it.wishlist + productId
-            prefs.edit().putStringSet("wishlist", updated).apply()
             it.copy(wishlist = updated)
         }
+        prefs.edit().putStringSet("wishlist", _state.value.wishlist).apply()
     }
 
-    fun updateSearch(value: String) { _state.update { it.copy(searchInput = value) } }
-
-    fun saveAddress(value: String) {
-        val address = value.trim().take(160).ifBlank { null }
-        prefs.edit().putString("address", address).apply()
-        _state.update { it.copy(address = address) }
+    fun updateSearch(value: String) {
+        _state.update { it.copy(searchInput = value.replace('\n', ' ').replace('\r', ' ').take(80)) }
     }
+
+    fun selectSearchCategory(id: String?) { _state.update { it.copy(searchCategoryId = id) } }
+
+    fun recordSearch() {
+        val snapshot = _state.value
+        val updated = recentSearches(snapshot.recentSearches, snapshot.searchInput)
+        prefs.edit().putString("recent_${snapshot.selectedMode.name}", updated.joinToString("\n")).apply()
+        _state.update { if (it.selectedMode == snapshot.selectedMode) it.copy(recentSearches = updated) else it }
+    }
+
+    fun clearRecentSearches() {
+        val mode = _state.value.selectedMode
+        prefs.edit().remove("recent_${mode.name}").apply()
+        _state.update { if (it.selectedMode == mode) it.copy(recentSearches = emptyList()) else it }
+    }
+
+    fun saveAddress(id: String?, type: String, line: String, city: String, postalCode: String, latitude: Double?, longitude: Double?) {
+        if (!isValidDeliveryAddress(line, city, postalCode)) return
+        val existingId = id?.takeIf { savedId -> _state.value.addresses.any { it.id == savedId } }
+        val validCoordinates = latitude != null && longitude != null && latitude.isFinite() && longitude.isFinite() &&
+            latitude in -90.0..90.0 && longitude in -180.0..180.0
+        val address = SavedAddress(existingId ?: UUID.randomUUID().toString(), type, line.trim().take(160), city.trim().take(80), postalCode,
+            if (validCoordinates) latitude else null, if (validCoordinates) longitude else null)
+        _state.update {
+            val addresses = if (existingId == null) it.addresses + address else it.addresses.map { saved -> if (saved.id == existingId) address else saved }
+            it.copy(addresses = addresses, selectedAddressId = address.id)
+        }
+        persistAddresses()
+    }
+
+    fun selectAddress(id: String) {
+        if (_state.value.addresses.none { it.id == id }) return
+        _state.update { it.copy(selectedAddressId = id) }
+        persistAddresses()
+    }
+
+    fun removeAddress(id: String) {
+        _state.update {
+            val remaining = it.addresses.filterNot { address -> address.id == id }
+            it.copy(addresses = remaining, selectedAddressId = if (it.selectedAddressId == id) remaining.firstOrNull()?.id else it.selectedAddressId)
+        }
+        persistAddresses()
+    }
+
+    private fun persistAddresses() {
+        val snapshot = _state.value
+        val json = JSONArray()
+        snapshot.addresses.forEach { address ->
+            json.put(JSONObject().put("id", address.id).put("type", address.type).put("line", address.line)
+                .put("city", address.city).put("postalCode", address.postalCode)
+                .put("latitude", address.latitude).put("longitude", address.longitude))
+        }
+        prefs.edit().putString("addresses", json.toString()).putString("selected_address_id", snapshot.selectedAddressId)
+            .remove("address").apply()
+    }
+
+    private fun readRecent(mode: ShoppingMode): List<String> =
+        prefs.getString("recent_${mode.name}", "").orEmpty().lineSequence().filter { it.isNotBlank() }.take(6).toList()
+
+    private fun readAddresses(raw: String?): List<SavedAddress> = runCatching {
+        if (raw.isNullOrBlank()) return@runCatching emptyList()
+        val array = JSONArray(raw)
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optString("id").takeIf { it.isNotBlank() } ?: continue
+                val line = item.optString("line").takeIf { it.isNotBlank() } ?: continue
+                val lat = item.optDouble("latitude", Double.NaN).takeIf { it.isFinite() && it in -90.0..90.0 }
+                val lng = item.optDouble("longitude", Double.NaN).takeIf { it.isFinite() && it in -180.0..180.0 }
+                add(SavedAddress(id, item.optString("type", "Saved"), line, item.optString("city"), item.optString("postalCode"), lat, lng))
+            }
+        }
+    }.getOrDefault(emptyList())
 
     companion object {
         fun factory(context: Context, repository: CatalogRepository) = object : ViewModelProvider.Factory {

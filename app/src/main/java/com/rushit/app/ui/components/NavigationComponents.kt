@@ -22,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,14 +55,14 @@ val mainDestinations = listOf(
 )
 
 @Composable
-fun CartSummary(totals: CartTotals, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun CartSummary(totals: CartTotals, onClick: () -> Unit, modifier: Modifier = Modifier, isSample: Boolean = false) {
     if (totals.itemCount <= 0) return
     val items = "${totals.itemCount} ${if (totals.itemCount == 1) "item" else "items"}"
     Row(
         modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(26.dp)).background(CtaRed)
             .clickable(role = Role.Button, onClickLabel = "View cart", onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "View cart, $items, total ${formatPrice(totals.totalPaise)}" }
+            .semantics(mergeDescendants = true) { contentDescription = "View ${if (isSample) "sample " else ""}cart, $items, total ${formatPrice(totals.totalPaise)}" }
             .heightIn(min = 64.dp).padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -68,7 +70,7 @@ fun CartSummary(totals: CartTotals, onClick: () -> Unit, modifier: Modifier = Mo
             RushIcon(R.drawable.ic_shopping_cart_01, null, Modifier.size(25.dp), CardWhite)
         }
         Spacer(Modifier.width(10.dp))
-        Text("$items · ${formatPrice(totals.totalPaise)}", Modifier.weight(1f), color = CardWhite, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text("${if (isSample) "Sample · " else ""}$items · ${formatPrice(totals.totalPaise)}", Modifier.weight(1f), color = CardWhite, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.width(4.dp))
         Row(Modifier.clip(CircleShape).background(DeepRed).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("View Cart", color = CardWhite, style = MaterialTheme.typography.labelMedium)
@@ -94,7 +96,9 @@ fun RushBottomBar(currentRoute: String, onSelect: (String) -> Unit, modifier: Mo
                 ) {
                     RushIcon(destination.icon, null, Modifier.size(23.dp), if (selected) Coral else Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text(destination.label, color = if (selected) Coral else Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1)
+                    Text(destination.label, color = if (selected) Coral else Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 2.dp))
                 }
             }
         }

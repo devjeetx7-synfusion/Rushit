@@ -1,6 +1,5 @@
 package com.rushit.app.ui.screens.home
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,18 +22,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,17 +45,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rushit.app.R
+import com.rushit.app.data.model.ShoppingMode
+import com.rushit.app.domain.categoriesForMode
+import com.rushit.app.domain.productsForMode
 import com.rushit.app.ui.components.CategoryItem
 import com.rushit.app.ui.components.MessageCard
 import com.rushit.app.ui.components.ProductCard
 import com.rushit.app.ui.components.RoundIconButton
 import com.rushit.app.ui.components.RushIcon
 import com.rushit.app.ui.components.SectionHeader
+import com.rushit.app.ui.components.ShoppingModeSwitcher
 import com.rushit.app.ui.theme.BannerPeach
 import com.rushit.app.ui.theme.Border
 import com.rushit.app.ui.theme.CardWhite
@@ -66,7 +68,6 @@ import com.rushit.app.ui.theme.CtaRed
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
-import com.rushit.app.ui.theme.SoftRed
 import com.rushit.app.ui.viewmodel.ShopUiState
 
 @Composable
@@ -77,30 +78,43 @@ fun HomeScreen(
     onSeeAll: () -> Unit,
     onShopNow: () -> Unit,
     onAccount: () -> Unit,
+    onCart: () -> Unit,
+    onAddress: () -> Unit,
+    onModeSelected: (ShoppingMode) -> Unit,
+    onProduct: (String) -> Unit,
     onAdd: (String) -> Unit,
     onWishlist: (String) -> Unit,
-    onSaveAddress: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
-    var showAddress by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
-    LazyColumn(Modifier.fillMaxSize().background(Cream), contentPadding = PaddingValues(bottom = 20.dp)) {
+    val listState = rememberLazyListState()
+    val categories = remember(state.categories, state.selectedMode) { categoriesForMode(state.categories, state.selectedMode) }
+    val products = remember(state.products, state.selectedMode) { productsForMode(state.products, state.selectedMode) }
+    val featured = remember(products, state.selectedMode) {
+        if (state.selectedMode == ShoppingMode.GROCERY) products.filter { it.isBestseller } else products
+    }
+    LazyColumn(Modifier.fillMaxSize().background(Cream), state = listState, contentPadding = PaddingValues(bottom = 20.dp)) {
         item(key = "header") {
-            LocationHeader(state.address, onAddress = { showAddress = true }, onNotifications = { showNotifications = true }, onAccount = onAccount)
+            LocationHeader(state.address, onAddress = onAddress, onNotifications = { showNotifications = true }, onAccount = onAccount)
         }
         item(key = "search") {
-            SearchEntry(onSearch, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                RoundIconButton(R.drawable.ic_shopping_cart_01, "Open ${state.selectedMode.label} cart", onCart, background = CardWhite, tint = Coral)
+            }
         }
         item(key = "banner") {
-            PromoBanner(onShopNow, Modifier.padding(horizontal = 16.dp))
+            PromoBanner(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
         }
         if (state.isSample) {
             item(key = "sample") {
-                Text("SAMPLE CATALOG · PRICES ARE ILLUSTRATIVE", color = Muted, style = MaterialTheme.typography.labelSmall,
-                    letterSpacing = .4.sp, modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 2.dp))
+                Text("Sample products · Illustrative prices", color = Muted, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 18.dp, top = 7.dp, bottom = 2.dp))
             }
-        } else {
-            item(key = "banner_space") { Spacer(Modifier.height(14.dp)) }
+        }
+        item(key = "shopping_modes") {
+            ShoppingModeSwitcher(state.selectedMode, onModeSelected, Modifier.padding(top = 5.dp, bottom = 8.dp))
         }
         when {
             state.loading -> item(key = "loading") {
@@ -109,28 +123,42 @@ fun HomeScreen(
                 }
             }
             state.error != null -> item(key = "error") {
-                MessageCard("Couldn't load groceries", state.error, Modifier.padding(16.dp), icon = R.drawable.ic_help_circle, action = "Try again", onAction = onRetry)
+                MessageCard("Couldn't load the catalog", state.error, Modifier.padding(16.dp), icon = R.drawable.ic_help_circle, action = "Try again", onAction = onRetry)
             }
             else -> {
-                item(key = "categories") {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(state.categories, key = { it.id }) { category -> CategoryItem(category, onClick = { onCategory(category.id) }) }
+                if (categories.isNotEmpty()) item(key = "categories") {
+                    LazyRow(contentPadding = PaddingValues(start = 14.dp, end = 20.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(categories, key = { it.id }) { category -> CategoryItem(category, onClick = { onCategory(category.id) }) }
                     }
                 }
                 item(key = "best_header") {
-                    SectionHeader("Bestsellers", "See All", onSeeAll, Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 5.dp))
+                    val title = when (state.selectedMode) {
+                        ShoppingMode.GROCERY -> "Bestsellers"
+                        ShoppingMode.ECOMMERCE -> "Explore examples"
+                        ShoppingMode.GIFTS -> "Gift collections"
+                    }
+                    SectionHeader(title, if (featured.isNotEmpty()) "See All" else null,
+                        if (featured.isNotEmpty()) onSeeAll else null,
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 5.dp))
                 }
-                val bestsellers = state.products.filter { it.isBestseller }
-                if (bestsellers.isEmpty()) {
-                    item(key = "best_empty") { MessageCard("No bestsellers yet", "Check back later for featured groceries.", Modifier.padding(horizontal = 16.dp)) }
+                if (featured.isEmpty()) {
+                    item(key = "best_empty") {
+                        val message = when (state.selectedMode) {
+                            ShoppingMode.GIFTS -> "Gift inventory isn't configured yet. Explore the categories for a preview."
+                            ShoppingMode.ECOMMERCE -> "No e-commerce listings have been configured yet."
+                            ShoppingMode.GROCERY -> "Check back later for featured groceries."
+                        }
+                        MessageCard("Nothing here yet", message, Modifier.padding(horizontal = 16.dp))
+                    }
                 } else {
                     item(key = "best_products") {
                         BoxWithConstraints(Modifier.fillMaxWidth()) {
                             val cardWidth = ((maxWidth - 48.dp) / 3).coerceIn(100.dp, 145.dp)
-                            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(bestsellers, key = { it.id }) { product ->
-                                    ProductCard(product, state.cart[product.id] ?: 0, product.id in state.wishlist,
-                                        onAdd = { onAdd(product.id) }, onWishlist = { onWishlist(product.id) }, width = cardWidth)
+                            LazyRow(contentPadding = PaddingValues(start = 16.dp, end = 20.dp, top = 5.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(featured, key = { it.id }) { product ->
+                                    ProductCard(product, state.quantityFor(product), product.id in state.wishlist,
+                                        onAdd = { onAdd(product.id) }, onWishlist = { onWishlist(product.id) },
+                                        onOpen = { onProduct(product.id) }, width = cardWidth)
                                 }
                             }
                         }
@@ -138,9 +166,6 @@ fun HomeScreen(
                 }
             }
         }
-    }
-    if (showAddress) {
-        AddressDialog(state.address, onDismiss = { showAddress = false }, onSave = { onSaveAddress(it); showAddress = false })
     }
     if (showNotifications) {
         AlertDialog(onDismissRequest = { showNotifications = false }, title = { Text("Notifications") },
@@ -176,7 +201,7 @@ private fun LocationHeader(address: String?, onAddress: () -> Unit, onNotificati
 }
 
 @Composable
-private fun SearchEntry(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modifier = Modifier) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 54.dp).clip(CircleShape).background(CardWhite.copy(alpha = .76f))
             .border(1.dp, Border, CircleShape).clickable(role = Role.Button, onClickLabel = "Search products", onClick = onClick)
@@ -184,50 +209,41 @@ private fun SearchEntry(onClick: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         RushIcon(R.drawable.ic_search_01, null, Modifier.size(24.dp), Ink)
         Spacer(Modifier.width(12.dp))
-        Text("Search for milk, fruits, snacks...", color = Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (mode == ShoppingMode.GROCERY) "Search for milk, fruits, snacks..." else "Search ${mode.label.lowercase()}...", color = Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun PromoBanner(onShop: () -> Unit, modifier: Modifier = Modifier) {
+private fun PromoBanner(mode: ShoppingMode, onShop: () -> Unit, modifier: Modifier = Modifier) {
+    val image = when (mode) {
+        ShoppingMode.GROCERY -> R.drawable.banner_groceries
+        ShoppingMode.ECOMMERCE -> R.drawable.ecommerce_headphones
+        ShoppingMode.GIFTS -> R.drawable.gift_bouquet
+    }
+    val headline = when (mode) {
+        ShoppingMode.GROCERY -> "Everyday\nEssentials,"
+        ShoppingMode.ECOMMERCE -> "Find more\nfor every day,"
+        ShoppingMode.GIFTS -> "Thoughtful gifts\nfor every"
+    }
+    val accent = when (mode) {
+        ShoppingMode.GROCERY -> "Delivered."
+        ShoppingMode.ECOMMERCE -> "Explore."
+        ShoppingMode.GIFTS -> "moment."
+    }
     BoxWithConstraints(modifier.fillMaxWidth().heightIn(min = 164.dp).clip(RoundedCornerShape(22.dp)).background(BannerPeach)) {
         val fadeEnd = with(LocalDensity.current) { maxWidth.toPx() * .68f }
-        Image(painterResource(R.drawable.banner_groceries), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        Image(painterResource(image), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(BannerPeach, BannerPeach.copy(alpha = .94f), Color.Transparent), endX = fadeEnd)))
         Column(Modifier.widthIn(max = 200.dp).padding(start = 20.dp, top = 18.dp, bottom = 17.dp)) {
-            Text("Everyday\nEssentials,", style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Ink)
-            Text("Delivered.", style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Coral)
+            Text(headline, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Ink)
+            Text(accent, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Coral)
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.clip(CircleShape).background(CtaRed).clickable(role = Role.Button, onClickLabel = "Shop now", onClick = onShop)
+            Row(Modifier.clip(CircleShape).background(CtaRed).clickable(role = Role.Button, onClickLabel = "Explore ${mode.label}", onClick = onShop)
                 .padding(horizontal = 15.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Shop Now", color = CardWhite, style = MaterialTheme.typography.labelMedium)
+                Text(if (mode == ShoppingMode.GROCERY) "Shop Now" else "Explore", color = CardWhite, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.width(5.dp))
                 RushIcon(R.drawable.ic_arrow_right_01, null, Modifier.size(16.dp), CardWhite)
             }
         }
     }
-}
-
-@Composable
-fun AddressDialog(address: String?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var draft by rememberSaveable(address) { mutableStateOf(address.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Delivery address") },
-        text = {
-            Column {
-                Text("Add an address or locality. It's saved only on this device; delivery coverage has not been checked.", style = MaterialTheme.typography.bodyMedium, color = Muted)
-                Spacer(Modifier.height(14.dp))
-                OutlinedTextField(value = draft, onValueChange = { draft = it.take(160) }, label = { Text("Address or locality") },
-                    modifier = Modifier.fillMaxWidth(), minLines = 1, maxLines = 3, shape = RoundedCornerShape(16.dp))
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(draft) }, enabled = draft.isNotBlank()) { Text("Save") } },
-        dismissButton = {
-            Row {
-                if (address != null) TextButton(onClick = { onSave("") }) { Text("Remove") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        }, containerColor = CardWhite,
-    )
 }

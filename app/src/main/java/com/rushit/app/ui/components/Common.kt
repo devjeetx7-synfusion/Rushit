@@ -108,10 +108,11 @@ fun RoundIconButton(
     modifier: Modifier = Modifier,
     tint: Color = Ink,
     background: Color = CardWhite,
+    enabled: Boolean = true,
 ) {
     Box(
-        modifier.size(48.dp).clip(CircleShape).background(background)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+        modifier.size(48.dp).graphicsLayer { alpha = if (enabled) 1f else .45f }.clip(CircleShape).background(background)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = description, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { RushIcon(icon, description, Modifier.size(24.dp), tint) }
 }

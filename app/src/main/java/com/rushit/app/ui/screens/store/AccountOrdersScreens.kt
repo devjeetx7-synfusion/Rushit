@@ -34,9 +34,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rushit.app.R
+import com.rushit.app.domain.maskedIndianMobile
 import com.rushit.app.ui.components.MessageCard
 import com.rushit.app.ui.components.RushIcon
-import com.rushit.app.ui.screens.home.AddressDialog
 import com.rushit.app.ui.theme.Border
 import com.rushit.app.ui.theme.CardWhite
 import com.rushit.app.ui.theme.Coral
@@ -48,17 +48,19 @@ import com.rushit.app.ui.viewmodel.AuthUiState
 import com.rushit.app.ui.viewmodel.ShopUiState
 
 @Composable
-fun OrdersScreen(onHome: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Cream).padding(16.dp)) {
+fun OrdersScreen(onHome: () -> Unit, onTracking: () -> Unit) {
+    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Orders", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 22.dp))
-        MessageCard("Your orders, all in one place", "Order history isn't connected yet. You can still explore the sample catalog.", action = "Explore groceries", onAction = onHome)
+        MessageCard("Your orders, all in one place", "Order history isn't connected yet. There are no live orders to show.", action = "Explore the catalog", onAction = onHome)
+        Spacer(Modifier.height(10.dp))
+        AccountRow(R.drawable.ic_package_01, "Order tracking", "Tracking is not connected yet", onTracking)
     }
 }
 
 @Composable
-fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onSaveAddress: (String) -> Unit, onSignInOrOut: () -> Unit) {
-    var showAddress by rememberSaveable { mutableStateOf(false) }
+fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit) {
     var showHelp by rememberSaveable { mutableStateOf(false) }
+    var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Account", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 20.dp))
         Surface(shape = RoundedCornerShape(22.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
@@ -68,25 +70,31 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
                 Column {
                     Text(if (auth.authenticated) "You're signed in" else "Browsing the sample store", style = MaterialTheme.typography.titleMedium, color = Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text(if (auth.authenticated) "Phone authentication is active on this device." else "Sign in when phone authentication is configured.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text(if (auth.authenticated && auth.phone.isNotBlank()) maskedIndianMobile(auth.phone) else if (auth.authenticated) "Phone authentication is active on this device." else "Sign in when phone authentication is configured.", style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
         }
         Spacer(Modifier.height(18.dp))
-        AccountRow(R.drawable.ic_heart, "Wishlist", "${shop.wishlist.size} saved", onWishlist)
+        AccountRow(R.drawable.ic_package_01, "Your orders", "Order history and tracking", onOrders)
         Spacer(Modifier.height(8.dp))
-        AccountRow(R.drawable.ic_location_01, "Delivery address", shop.address ?: "Add an address", { showAddress = true })
+        AccountRow(R.drawable.ic_heart, "Wishlist", "${shop.wishlist.size} saved across modes", onWishlist)
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_location_01, "Delivery addresses", shop.address ?: "Add an address", onAddresses)
         Spacer(Modifier.height(8.dp))
         AccountRow(R.drawable.ic_help_circle, "Help", "Phone sign-in and sample store", { showHelp = true })
         Spacer(Modifier.height(8.dp))
-        AccountRow(R.drawable.ic_logout_01, if (auth.authenticated) "Sign out" else "Sign in", if (auth.busy) "Please wait…" else "", onSignInOrOut, enabled = !auth.busy)
+        AccountRow(R.drawable.ic_logout_01, if (auth.authenticated) "Sign out" else "Sign in", if (auth.busy) "Please wait…" else "",
+            { if (auth.authenticated) confirmSignOut = true else onSignInOrOut() }, enabled = !auth.busy)
         auth.error?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
         Spacer(Modifier.height(24.dp))
         Text(if (shop.isSample) "Sample catalog · No live inventory, orders or checkout" else "Orders and checkout are not connected yet", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(horizontal = 4.dp))
     }
-    if (showAddress) AddressDialog(shop.address, onDismiss = { showAddress = false }, onSave = { onSaveAddress(it); showAddress = false })
+    if (confirmSignOut) AlertDialog(onDismissRequest = { confirmSignOut = false }, title = { Text("Sign out?") },
+        text = { Text("You'll need to verify your phone again to sign back in.") },
+        confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignInOrOut() }) { Text("Sign out") } },
+        dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } }, containerColor = CardWhite)
     if (showHelp) AlertDialog(onDismissRequest = { showHelp = false }, title = { Text("Need a hand?") },
-        text = { Text("The sample store is for browsing only. For phone sign-in, your app administrator must configure Supabase Auth and SMS delivery.") },
+        text = { Text("The sample store is for browsing only. For phone sign-in, your app administrator must configure Supabase Auth and SMS delivery. Support contact details haven't been configured.") },
         confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Got it") } }, containerColor = CardWhite)
 }
 

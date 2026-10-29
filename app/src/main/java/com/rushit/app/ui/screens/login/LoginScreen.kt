@@ -1,6 +1,7 @@
 package com.rushit.app.ui.screens.login
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -8,6 +9,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +25,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +41,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,9 +53,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -58,7 +68,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.rushit.app.BuildConfig
 import com.rushit.app.R
 import com.rushit.app.domain.isValidIndianMobile
@@ -76,11 +85,10 @@ import com.rushit.app.ui.theme.FlagSaffron
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
-import com.rushit.app.ui.theme.SoftRed
 import com.rushit.app.ui.viewmodel.AuthUiState
 import java.net.URI
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun LoginScreen(
     state: AuthUiState,
@@ -93,6 +101,12 @@ fun LoginScreen(
     val uriHandler = LocalUriHandler.current
     val largeText = LocalConfiguration.current.fontScale > 1.2f
     val validPhone = isValidIndianMobile(state.phone)
+    val continueRequester = remember { BringIntoViewRequester() }
+    var phoneFocused by remember { mutableStateOf(false) }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(phoneFocused, imeVisible) {
+        if (phoneFocused && imeVisible) continueRequester.bringIntoView()
+    }
 
     fun openPolicy(url: String, title: String) {
         dialogTitle = title
@@ -104,94 +118,100 @@ fun LoginScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Cream).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                RushWordmark(Modifier.width(165.dp).height(67.dp))
-                Text("Fresh Finds. Fast Delivery.", style = MaterialTheme.typography.labelSmall, color = Ink, modifier = Modifier.padding(start = 3.dp))
-            }
-            Row(
-                Modifier.heightIn(min = 48.dp).clip(CircleShape).background(Peach)
-                    .clickable(role = Role.Button, onClickLabel = "Open help") { dialogTitle = "How can we help?"; dialog = "Enter your Indian mobile number to receive a one-time SMS code. If a code doesn't arrive, check your connection and try again. Phone sign-in requires the store's SMS provider to be configured. You can also browse the sample store without signing in." }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RushIcon(R.drawable.ic_help_circle, null, Modifier.size(20.dp), Coral)
-                Spacer(Modifier.width(7.dp))
-                Text("Help", color = DeepRed, style = MaterialTheme.typography.labelMedium)
-            }
-        }
-        Box(Modifier.fillMaxWidth().heightIn(min = if (largeText) 255.dp else 218.dp)) {
-            Image(
-                painterResource(R.drawable.login_rider), contentDescription = null,
-                modifier = Modifier.align(Alignment.TopEnd).fillMaxWidth(if (largeText) 0.55f else 0.68f).height(160.dp).alpha(if (largeText) .25f else 1f),
-                contentScale = ContentScale.Fit,
-            )
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(if (largeText) 1f else .80f).padding(bottom = 2.dp)) {
-                Text("Groceries,\njust a tap away!", style = MaterialTheme.typography.headlineLarge, color = Ink)
-                Spacer(Modifier.height(10.dp))
-                Text("Login to get your daily essentials delivered to your doorstep.", style = MaterialTheme.typography.bodyLarge, color = Muted)
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        Surface(shape = RoundedCornerShape(24.dp), color = CardWhite, shadowElevation = 1.dp, border = BorderStroke(1.dp, Border.copy(alpha = .45f)), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Enter your mobile number", style = MaterialTheme.typography.titleMedium, color = Ink)
-                Spacer(Modifier.height(10.dp))
-                PhoneInput(value = state.phone, onValueChange = onPhoneChange, onDone = { if (validPhone) onContinue() }, error = state.phone.length == 10 && !validPhone, enabled = !state.busy)
-                if (state.phone.isNotEmpty() && !validPhone) {
-                    Spacer(Modifier.height(6.dp))
-                    val guidance = if (state.phone.length < 10) "Enter all 10 digits of your mobile number." else "Enter a valid Indian mobile number starting with 6–9."
-                    Text(guidance, color = DeepRed, style = MaterialTheme.typography.bodySmall)
+    BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
+        val heroSpacing = (maxHeight * .022f).coerceIn(8.dp, 18.dp)
+        val heroHeight = (maxHeight * .30f).coerceIn(218.dp, 260.dp)
+        Column(
+            Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    RushWordmark(Modifier.width(165.dp).height(67.dp))
+                    Text("Fresh Finds. Fast Delivery.", style = MaterialTheme.typography.labelSmall, color = Ink, modifier = Modifier.padding(start = 3.dp))
                 }
-                state.error?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = DeepRed, style = MaterialTheme.typography.bodySmall)
-                }
-                state.notice?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = Muted, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(16.dp))
-                RushButton("Continue", onContinue, enabled = validPhone, loading = state.busy)
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    HorizontalDivider(Modifier.weight(1f), color = Border)
-                    Text("or", color = Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp))
-                    HorizontalDivider(Modifier.weight(1f), color = Border)
-                }
-                Spacer(Modifier.height(12.dp))
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 54.dp).clip(CircleShape).background(Peach.copy(alpha = .72f))
-                        .clickable(enabled = !state.busy, role = Role.Button, onClick = onBrowseSample).padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                    Modifier.heightIn(min = 48.dp).clip(CircleShape).background(Peach)
+                        .clickable(role = Role.Button, onClickLabel = "Open help") { dialogTitle = "How can we help?"; dialog = "Enter your Indian mobile number to receive a one-time SMS code. If a code doesn't arrive, check your connection and try again. Phone sign-in requires the store's SMS provider to be configured. You can also browse the sample store without signing in." }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RushIcon(R.drawable.ic_shopping_bag_01, null, Modifier.size(20.dp), Coral)
-                    Spacer(Modifier.width(9.dp))
-                    Text("Browse the sample store", style = MaterialTheme.typography.labelMedium, color = Ink, textAlign = TextAlign.Center)
+                    RushIcon(R.drawable.ic_help_circle, null, Modifier.size(20.dp), Coral)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Help", color = DeepRed, style = MaterialTheme.typography.labelMedium)
                 }
-                Spacer(Modifier.height(6.dp))
-                Text("No account needed · Not a live shop", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             }
-        }
-        Spacer(Modifier.height(24.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.Center) {
-            RushIcon(R.drawable.ic_lock_keyhole, null, Modifier.padding(top = 2.dp).size(19.dp), Muted)
-            Spacer(Modifier.width(8.dp))
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("By continuing, you agree to our", style = MaterialTheme.typography.bodySmall, color = Muted)
-                Text("Terms of Service", style = MaterialTheme.typography.bodySmall, color = DeepRed, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(role = Role.Button) { openPolicy(BuildConfig.TERMS_URL, "Terms of Service") })
-                Text("and", style = MaterialTheme.typography.bodySmall, color = Muted)
-                Text("Privacy Policy.", style = MaterialTheme.typography.bodySmall, color = DeepRed, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(role = Role.Button) { openPolicy(BuildConfig.PRIVACY_URL, "Privacy Policy") })
+            Spacer(Modifier.height(heroSpacing))
+            Box(Modifier.fillMaxWidth().heightIn(min = if (largeText) heroHeight + 36.dp else heroHeight)) {
+                Image(
+                    painterResource(R.drawable.login_rider), contentDescription = null,
+                    modifier = Modifier.align(Alignment.TopEnd).fillMaxWidth(if (largeText) 0.55f else 0.68f).height(160.dp).alpha(if (largeText) .25f else 1f),
+                    contentScale = ContentScale.Fit,
+                )
+                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(if (largeText) 1f else .80f).padding(bottom = 2.dp)) {
+                    Text("Groceries,\njust a tap away!", style = MaterialTheme.typography.headlineLarge, color = Ink)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Login to get your daily essentials delivered to your doorstep.", style = MaterialTheme.typography.bodyLarge, color = Muted)
+                }
             }
+            Spacer(Modifier.height(20.dp))
+            Surface(shape = RoundedCornerShape(24.dp), color = CardWhite, shadowElevation = 1.dp, border = BorderStroke(1.dp, Border.copy(alpha = .45f)), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Enter your mobile number", style = MaterialTheme.typography.titleMedium, color = Ink)
+                    Spacer(Modifier.height(10.dp))
+                    PhoneInput(value = state.phone, onValueChange = onPhoneChange, onDone = { if (validPhone) onContinue() },
+                        error = state.phone.length == 10 && !validPhone, enabled = !state.busy, onFocusChange = { phoneFocused = it })
+                    if (state.phone.isNotEmpty() && !validPhone) {
+                        Spacer(Modifier.height(6.dp))
+                        val guidance = if (state.phone.length < 10) "Enter all 10 digits of your mobile number." else "Enter a valid Indian mobile number starting with 6–9."
+                        Text(guidance, color = DeepRed, style = MaterialTheme.typography.bodySmall)
+                    }
+                    state.error?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = DeepRed, style = MaterialTheme.typography.bodySmall)
+                    }
+                    state.notice?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    RushButton("Continue", onContinue, modifier = Modifier.bringIntoViewRequester(continueRequester), enabled = validPhone, loading = state.busy)
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(Modifier.weight(1f), color = Border)
+                        Text("or", color = Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp))
+                        HorizontalDivider(Modifier.weight(1f), color = Border)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 54.dp).clip(CircleShape).background(Peach.copy(alpha = .72f))
+                            .clickable(enabled = !state.busy, role = Role.Button, onClick = onBrowseSample).padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RushIcon(R.drawable.ic_shopping_bag_01, null, Modifier.size(20.dp), Coral)
+                        Spacer(Modifier.width(9.dp))
+                        Text("Browse the sample store", style = MaterialTheme.typography.labelMedium, color = Ink, textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("No account needed · Not a live shop", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.Center) {
+                RushIcon(R.drawable.ic_lock_keyhole, null, Modifier.padding(top = 2.dp).size(19.dp), Muted)
+                Spacer(Modifier.width(8.dp))
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("By continuing, you agree to our", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text("Terms of Service", style = MaterialTheme.typography.bodySmall, color = DeepRed, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(role = Role.Button) { openPolicy(BuildConfig.TERMS_URL, "Terms of Service") })
+                    Text("and", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text("Privacy Policy.", style = MaterialTheme.typography.bodySmall, color = DeepRed, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable(role = Role.Button) { openPolicy(BuildConfig.PRIVACY_URL, "Privacy Policy") })
+                }
+            }
+            Spacer(Modifier.height(32.dp))
         }
-        Spacer(Modifier.height(32.dp))
     }
     if (dialog != null) {
         AlertDialog(
@@ -205,7 +225,7 @@ fun LoginScreen(
 }
 
 @Composable
-private fun PhoneInput(value: String, onValueChange: (String) -> Unit, onDone: () -> Unit, error: Boolean, enabled: Boolean) {
+private fun PhoneInput(value: String, onValueChange: (String) -> Unit, onDone: () -> Unit, error: Boolean, enabled: Boolean, onFocusChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 62.dp).clip(RoundedCornerShape(18.dp))
             .border(1.5.dp, if (error) Coral else Border, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
@@ -222,7 +242,7 @@ private fun PhoneInput(value: String, onValueChange: (String) -> Unit, onDone: (
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontWeight = FontWeight.SemiBold),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onDone() }), cursorBrush = SolidColor(Coral),
-            modifier = Modifier.weight(1f).semantics { contentDescription = "Mobile number" },
+            modifier = Modifier.weight(1f).onFocusChanged { onFocusChange(it.isFocused) }.semantics { contentDescription = "Mobile number" },
             decorationBox = { inner -> Box { if (value.isEmpty()) Text("98765 43210", style = MaterialTheme.typography.bodyLarge, color = Muted.copy(alpha = .65f)); inner() } },
         )
     }

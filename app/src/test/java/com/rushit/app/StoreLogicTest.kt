@@ -2,6 +2,13 @@ package com.rushit.app
 
 import com.rushit.app.data.model.Category
 import com.rushit.app.data.model.Product
+import com.rushit.app.data.model.ShoppingMode
+import com.rushit.app.domain.categoriesForMode
+import com.rushit.app.domain.productsForMode
+import com.rushit.app.domain.updateModeCart
+import com.rushit.app.domain.isValidDeliveryAddress
+import com.rushit.app.domain.maskedIndianMobile
+import com.rushit.app.domain.recentSearches
 import com.rushit.app.domain.cartTotals
 import com.rushit.app.domain.formatPrice
 import com.rushit.app.domain.isValidIndianMobile
@@ -51,5 +58,48 @@ class StoreLogicTest {
     @Test fun `prices show rupees and paise without adding false fractions`() {
         assertEquals("₹24", formatPrice(2_400))
         assertEquals("₹24.50", formatPrice(2_450))
+    }
+
+    @Test fun `mode filters do not leak grocery products or categories`() {
+        val lamp = Product("lamp", "Lamp", "Example", "home", pricePaise = 99_900, unit = "1", mode = ShoppingMode.ECOMMERCE)
+        val allCategories = categories + Category("home", "Home", sortOrder = 0, mode = ShoppingMode.ECOMMERCE) +
+            Category("gifts", "Gifts", sortOrder = 0, mode = ShoppingMode.GIFTS)
+        assertEquals(listOf(tomato, milk), productsForMode(listOf(tomato, milk, lamp), ShoppingMode.GROCERY))
+        assertEquals(listOf(lamp), productsForMode(listOf(tomato, milk, lamp), ShoppingMode.ECOMMERCE))
+        assertTrue(productsForMode(listOf(tomato, milk, lamp), ShoppingMode.GIFTS).isEmpty())
+        assertEquals(listOf("home"), categoriesForMode(allCategories, ShoppingMode.ECOMMERCE).map { it.id })
+        assertEquals(listOf("gifts"), categoriesForMode(allCategories, ShoppingMode.GIFTS).map { it.id })
+    }
+
+    @Test fun `mode carts stay independent and preview items cannot be added`() {
+        val lamp = Product("lamp", "Lamp", "", "home", pricePaise = 99_900, unit = "1", mode = ShoppingMode.ECOMMERCE, stockQuantity = 2)
+        val preview = lamp.copy(id = "preview", previewOnly = true, isAvailable = true)
+        val unavailable = lamp.copy(id = "unavailable", isAvailable = false)
+        var carts = updateModeCart(emptyMap(), tomato, 2)
+        carts = updateModeCart(carts, lamp, 5)
+        carts = updateModeCart(carts, preview, 1)
+        carts = updateModeCart(carts, unavailable, 1)
+        assertEquals(mapOf("tomato" to 2), carts[ShoppingMode.GROCERY])
+        assertEquals(mapOf("lamp" to 2), carts[ShoppingMode.ECOMMERCE])
+        carts = updateModeCart(carts, lamp, -2)
+        assertFalse(carts.containsKey(ShoppingMode.ECOMMERCE))
+        assertEquals(mapOf("tomato" to 2), carts[ShoppingMode.GROCERY])
+    }
+
+    @Test fun `validates manually entered address and masks mobile`() {
+        assertTrue(isValidDeliveryAddress("12 Main Road", "Patna", "800001"))
+        assertFalse(isValidDeliveryAddress("12", "Patna", "800001"))
+        assertFalse(isValidDeliveryAddress("12 Main Road", "P", "800001"))
+        assertFalse(isValidDeliveryAddress("12 Main Road", "Patna", "000001"))
+        assertFalse(isValidDeliveryAddress("12 Main Road", "Patna", "8000A1"))
+        assertEquals("+91 ••••••3210", maskedIndianMobile("9876543210"))
+        assertEquals("your mobile number", maskedIndianMobile("123"))
+    }
+
+    @Test fun `recent searches are bounded sanitized and case insensitive`() {
+        val existing = listOf("milk", "Bread", "Tomato", "Eggs", "Rice", "Apple")
+        assertEquals(listOf("MILK", "Bread", "Tomato", "Eggs", "Rice", "Apple"), recentSearches(existing, " MILK "))
+        assertEquals(listOf("green tea", "milk", "Bread", "Tomato", "Eggs", "Rice"), recentSearches(existing, "green\ntea"))
+        assertEquals(existing, recentSearches(existing, "  "))
     }
 }

@@ -11,6 +11,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -102,13 +104,31 @@ class AuthViewModelTest {
         assertTrue(vm.state.value.authenticated)
     }
 
+    @Test fun `startup stops waiting after the bounded session check`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val vm = AuthViewModel(FakeAuth().apply { waitForRestore = gate; session = SessionResult.Authenticated })
+        runCurrent()
+        advanceTimeBy(8_999)
+        runCurrent()
+        assertTrue(vm.state.value.initializing)
+        advanceTimeBy(1)
+        runCurrent()
+        assertFalse(vm.state.value.initializing)
+        assertFalse(vm.state.value.authenticated)
+        assertTrue(vm.state.value.notice.orEmpty().contains("timed out"))
+        gate.complete(Unit)
+        runCurrent()
+        assertFalse(vm.state.value.authenticated)
+    }
+
     private class FakeAuth : AuthRepository {
         var requestResult: AuthResult = AuthResult.Success
         var verifyResult: AuthResult = AuthResult.Success
         var session: SessionResult = SessionResult.Unauthenticated()
         var waitForRequest: CompletableDeferred<Unit>? = null
+        var waitForRestore: CompletableDeferred<Unit>? = null
         var requests = 0
-        override suspend fun restoreSession() = session
+        override suspend fun restoreSession(): SessionResult { waitForRestore?.await(); return session }
         override suspend fun requestOtp(phone: String): AuthResult { requests++; waitForRequest?.await(); return requestResult }
         override suspend fun verifyOtp(phone: String, token: String): AuthResult = verifyResult
         override suspend fun signOut(): AuthResult = AuthResult.Success

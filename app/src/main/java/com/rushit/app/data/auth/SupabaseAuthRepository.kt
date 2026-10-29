@@ -1,7 +1,10 @@
 package com.rushit.app.data.auth
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
@@ -53,17 +56,23 @@ class SupabaseAuthRepository internal constructor(
     private val configured get() = baseUrl != null && publicKey.isNotBlank()
 
     override suspend fun restoreSession(): SessionResult = withContext(Dispatchers.IO) {
-        val session = try { store.read() } catch (_: Exception) {
+        val session = try { store.read() } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            currentCoroutineContext().ensureActive()
             store.clear()
             return@withContext SessionResult.Unauthenticated("Your saved session could not be restored. Please sign in again.")
         } ?: return@withContext SessionResult.Unauthenticated()
+        currentCoroutineContext().ensureActive()
         if (!configured) return@withContext SessionResult.Unauthenticated("Sign-in is not configured on this build.")
         try {
             val user = call("GET", "/user", token = session.accessToken)
+            currentCoroutineContext().ensureActive()
             when {
                 user.code in 200..299 -> SessionResult.Authenticated
                 user.code == 401 || user.code == 403 -> {
                     val refreshed = call("POST", "/token?grant_type=refresh_token", JSONObject().put("refresh_token", session.refreshToken))
+                    currentCoroutineContext().ensureActive()
                     val newSession = refreshed.sessionOrNull()
                     if (refreshed.code in 200..299 && newSession != null) {
                         store.write(newSession)
@@ -77,6 +86,8 @@ class SupabaseAuthRepository internal constructor(
                 }
                 else -> SessionResult.Unauthenticated("Could not restore your session. Please try again.")
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             // Keep the encrypted session so a transient network failure does not destroy it.
             SessionResult.Unauthenticated("Could not restore your session. Check your connection and try again.")
