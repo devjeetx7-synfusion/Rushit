@@ -109,12 +109,30 @@ fun RoundIconButton(
     tint: Color = Ink,
     background: Color = CardWhite,
     enabled: Boolean = true,
+    badge: Int = 0,
 ) {
     Box(
         modifier.size(48.dp).graphicsLayer { alpha = if (enabled) 1f else .45f }.clip(CircleShape).background(background)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = description, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { RushIcon(icon, description, Modifier.size(24.dp), tint) }
+    ) {
+        RushIcon(icon, description, Modifier.size(24.dp), tint)
+        if (badge > 0) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 2.dp).size(18.dp)
+                    .clip(CircleShape).background(CtaRed),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (badge > 9) "9+" else "$badge",
+                    color = CardWhite,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
 }
 
 @Composable

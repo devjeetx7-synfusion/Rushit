@@ -1,6 +1,12 @@
 package com.rushit.app.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,10 +28,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,6 +52,11 @@ import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.CtaRed
 import com.rushit.app.ui.theme.DeepRed
 import com.rushit.app.ui.theme.Ink
+import com.rushit.app.ui.theme.LocalReducedMotion
+import com.rushit.app.ui.theme.Motion
+import com.rushit.app.ui.theme.Muted
+import com.rushit.app.ui.theme.Peach
+import com.rushit.app.ui.theme.motionDuration
 
 data class MainDestination(val route: String, val label: String, @DrawableRes val icon: Int)
 
@@ -82,21 +95,48 @@ fun CartSummary(totals: CartTotals, onClick: () -> Unit, modifier: Modifier = Mo
 
 @Composable
 fun RushBottomBar(currentRoute: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    val reduced = LocalReducedMotion.current
     Column(modifier.fillMaxWidth().background(Cream)) {
         HorizontalDivider(color = Border.copy(alpha = .65f))
         Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly) {
             mainDestinations.forEach { destination ->
                 val selected = destination.route == currentRoute
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected) 1.1f else 1f,
+                    animationSpec = if (reduced) snap() else spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                    label = "tab icon scale",
+                )
+                val tint by animateColorAsState(
+                    targetValue = if (selected) Coral else Muted,
+                    animationSpec = tween(motionDuration(Motion.BOTTOM_NAVIGATION, reduced)),
+                    label = "tab tint",
+                )
+                val pillAlpha by animateFloatAsState(
+                    targetValue = if (selected) 1f else 0f,
+                    animationSpec = tween(motionDuration(Motion.BOTTOM_NAVIGATION, reduced)),
+                    label = "tab pill",
+                )
                 Column(
                     Modifier.weight(1f).heightIn(min = 64.dp)
                         .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(destination.route) })
-                        .padding(top = 8.dp, bottom = 6.dp),
+                        .padding(top = 7.dp, bottom = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    RushIcon(destination.icon, null, Modifier.size(23.dp), if (selected) Coral else Ink)
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.size(34.dp).graphicsLayer { alpha = pillAlpha }
+                                .clip(CircleShape).background(Peach),
+                        )
+                        RushIcon(
+                            destination.icon,
+                            null,
+                            Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+                            tint,
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
-                    Text(destination.label, color = if (selected) Coral else Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    Text(destination.label, color = tint, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 2.dp))
                 }

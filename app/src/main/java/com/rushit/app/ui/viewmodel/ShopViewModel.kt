@@ -12,7 +12,9 @@ import com.rushit.app.data.repository.CatalogRepository
 import com.rushit.app.domain.CartTotals
 import com.rushit.app.domain.cartTotals
 import com.rushit.app.domain.isValidDeliveryAddress
+import com.rushit.app.domain.productsForSelection
 import com.rushit.app.domain.recentSearches
+import com.rushit.app.domain.resolveCategorySelection
 import com.rushit.app.domain.updateModeCart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -46,12 +48,21 @@ data class ShopUiState(
     val searchQuery: String = "",
     val searchCategoryId: String? = null,
     val recentSearches: List<String> = emptyList(),
+    val selectedCategoryId: String? = null,
 ) {
     val cart: Map<String, Int> get() = carts[selectedMode].orEmpty()
     val totals: CartTotals get() = cartTotals(cart, products)
     val selectedAddress: SavedAddress? get() = addresses.firstOrNull { it.id == selectedAddressId }
     val address: String? get() = selectedAddress?.summary
     fun quantityFor(product: Product): Int = carts[product.mode]?.get(product.id) ?: 0
+
+    /** Categories of the active mode; the single source for the home rail and listing screens. */
+    fun categoriesInMode(): List<Category> = categories.filter { it.mode == selectedMode }.sortedBy { it.sortOrder }
+
+    val selectedCategory: Category? get() = selectedCategoryId?.let { id -> categories.firstOrNull { it.id == id && it.mode == selectedMode } }
+
+    /** Products for the active mode, narrowed by the selected category. */
+    fun visibleProducts(): List<Product> = productsForSelection(products, selectedMode, selectedCategoryId)
 }
 
 @OptIn(FlowPreview::class)
@@ -100,8 +111,14 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
             result.fold(
                 onSuccess = { catalog ->
                     _state.update {
-                        it.copy(loading = false, categories = catalog.categories.sortedBy { category -> category.sortOrder },
-                            products = catalog.products, isSample = catalog.isSample, error = null)
+                        it.copy(
+                            loading = false,
+                            categories = catalog.categories.sortedBy { category -> category.sortOrder },
+                            products = catalog.products,
+                            isSample = catalog.isSample,
+                            error = null,
+                            selectedCategoryId = resolveCategorySelection(catalog.categories, it.selectedMode, it.selectedCategoryId),
+                        )
                     }
                 },
                 onFailure = { _state.update { it.copy(loading = false, error = "Couldn't load the catalog. Check your connection and try again.") } },
@@ -110,9 +127,28 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
     }
 
     fun selectMode(mode: ShoppingMode) {
-        if (_state.value.selectedMode == mode) return
+        val current = _state.value
+        if (current.selectedMode == mode) return
         prefs.edit().putString("shopping_mode", mode.name).apply()
-        _state.update { it.copy(selectedMode = mode, searchInput = "", searchQuery = "", searchCategoryId = null, recentSearches = readRecent(mode)) }
+        _state.update {
+            it.copy(
+                selectedMode = mode,
+                // A category from the previous mode must never stay highlighted.
+                selectedCategoryId = resolveCategorySelection(it.categories, mode, it.selectedCategoryId),
+                searchInput = "",
+                searchQuery = "",
+                searchCategoryId = null,
+                recentSearches = readRecent(mode),
+            )
+        }
+    }
+
+    /** Selecting an unknown or cross-mode category is ignored rather than shown as active. */
+    fun selectCategory(categoryId: String?) {
+        _state.update {
+            val resolved = resolveCategorySelection(it.categories, it.selectedMode, categoryId)
+            if (resolved == it.selectedCategoryId) it else it.copy(selectedCategoryId = resolved)
+        }
     }
 
     fun changeQuantity(productId: String, delta: Int) {

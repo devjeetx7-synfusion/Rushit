@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rushit.app.R
 import com.rushit.app.data.model.Category
@@ -83,6 +84,9 @@ import com.rushit.app.ui.viewmodel.ShopUiState
 @Composable
 fun CategoriesScreen(state: ShopUiState, onModeSelected: (ShoppingMode) -> Unit, onCategory: (String) -> Unit, onRetry: () -> Unit) {
     val categories = remember(state.categories, state.selectedMode) { categoriesForMode(state.categories, state.selectedMode) }
+    val countsByCategory = remember(state.products, state.selectedMode) {
+        state.products.filter { it.mode == state.selectedMode }.groupingBy { it.categoryId }.eachCount()
+    }
     Column(Modifier.fillMaxSize().background(Cream)) {
         Text("Categories", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 20.dp, top = 22.dp))
         Text(if (state.isSample) "Explore ${state.selectedMode.label.lowercase()} examples" else "Explore ${state.selectedMode.label.lowercase()}",
@@ -101,7 +105,15 @@ fun CategoriesScreen(state: ShopUiState, onModeSelected: (ShoppingMode) -> Unit,
                                 CatalogImage(category.imageUrl, category.imageRes, null, Modifier.size(55.dp))
                             }
                             Spacer(Modifier.width(16.dp))
-                            Text(category.name, style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.weight(1f))
+                            Column(Modifier.weight(1f)) {
+                                Text(category.name, style = MaterialTheme.typography.titleMedium, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                val count = countsByCategory[category.id] ?: 0
+                                Text(
+                                    if (count > 0) "$count ${if (count == 1) "item" else "items"}" else "Preview only · no items yet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Muted,
+                                )
+                            }
                             RushIcon(R.drawable.ic_arrow_right_01, null, Modifier.size(22.dp), Coral)
                             Spacer(Modifier.width(8.dp))
                         }

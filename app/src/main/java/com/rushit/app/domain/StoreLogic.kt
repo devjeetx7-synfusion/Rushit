@@ -29,6 +29,17 @@ fun categoriesForMode(categories: List<Category>, mode: ShoppingMode): List<Cate
 fun productsForMode(products: List<Product>, mode: ShoppingMode): List<Product> =
     products.filter { it.mode == mode }
 
+/**
+ * A category is only selectable inside its own mode. Anything else falls back to "All", so switching
+ * shopping mode can never leave an incompatible category highlighted.
+ */
+fun resolveCategorySelection(categories: List<Category>, mode: ShoppingMode, selectedId: String?): String? =
+    selectedId?.takeIf { id -> categories.any { it.mode == mode && it.id == id } }
+
+/** Products for the active mode, narrowed to one category when one is selected (null means all). */
+fun productsForSelection(products: List<Product>, mode: ShoppingMode, categoryId: String?): List<Product> =
+    products.filter { it.mode == mode && (categoryId == null || it.categoryId == categoryId) }
+
 /** A single map entry per product prevents duplicate cart lines. */
 fun updateCart(cart: Map<String, Int>, productId: String, delta: Int, maxQuantity: Int = 99): Map<String, Int> {
     val quantity = ((cart[productId] ?: 0).toLong() + delta).coerceIn(0, maxQuantity.coerceAtLeast(0).toLong()).toInt()
