@@ -17,6 +17,12 @@ fun setting(name: String): String = providers.gradleProperty(name).orNull
 fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\")
     .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
 
+// CI opts in explicitly; ordinary local debug and release signing remain unchanged.
+val usePersistentTestSigning = providers.environmentVariable("RUSHIT_TEST_SIGNING").orNull == "true"
+fun requiredSigningEnvironment(name: String): String =
+    providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+        ?: error("Missing required test signing environment variable: $name")
+
 val supabaseKey = setting("SUPABASE_ANON_KEY").trim()
 // A client app may only contain a publishable/anon key, never a privileged key.
 val jwtPayload = runCatching {
@@ -44,7 +50,23 @@ android {
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
     }
+    signingConfigs {
+        if (usePersistentTestSigning) {
+            create("persistentTest") {
+                storeFile = file(requiredSigningEnvironment("RUSHIT_TEST_KEYSTORE_FILE"))
+                require(storeFile?.isFile == true) { "The persistent test keystore file is missing." }
+                storePassword = requiredSigningEnvironment("TEST_KEYSTORE_PASSWORD")
+                keyAlias = requiredSigningEnvironment("TEST_KEY_ALIAS")
+                keyPassword = requiredSigningEnvironment("TEST_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
+        getByName("debug") {
+            if (usePersistentTestSigning) {
+                signingConfig = signingConfigs.getByName("persistentTest")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
