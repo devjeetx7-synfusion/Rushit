@@ -41,17 +41,28 @@ jobs:
         shell: bash
         run: ./gradlew :app:lintDebug --no-daemon --console=plain
 
-      - name: Summarise lint findings
+      - name: Report test and lint results
         if: always()
         shell: bash
         run: |
+          shopt -s nullglob
+          files=(app/build/test-results/testDebugUnitTest/TEST-*.xml)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error title=Unit tests::no test result XML was produced"
+          else
+            python3 -c "import glob,xml.etree.ElementTree as ET; n=f=e=s=0
+          for p in glob.glob('app/build/test-results/testDebugUnitTest/TEST-*.xml'):
+              r=ET.parse(p).getroot(); n+=int(r.get('tests',0)); f+=int(r.get('failures',0)); e+=int(r.get('errors',0)); s+=int(r.get('skipped',0))
+              [print('::error title=Test failed::'+c.get('classname')+'.'+c.get('name')) for c in r.iter('testcase') if list(c.iter('failure')) or list(c.iter('error'))]
+          print('::notice title=Unit tests::'+str(n)+' tests, '+str(f)+' failures, '+str(e)+' errors, '+str(s)+' skipped')" || true
+          fi
           report=app/build/reports/lint-results-debug.xml
           if [[ -f "$report" ]]; then
-            echo "Lint errors: $(grep -c 'severity="Error"' "$report" || true)"
-            echo "Lint warnings: $(grep -c 'severity="Warning"' "$report" || true)"
-            python3 -c 'import sys, xml.etree.ElementTree as ET; root = ET.parse(sys.argv[1]).getroot(); [print("ERROR", i.get("id"), ":", i.get("message"), "@", (i.find("location").get("file") if i.find("location") is not None else "?")) for i in root.iter("issue") if i.get("severity") == "Error"]' "$report"
+            python3 -c "import xml.etree.ElementTree as ET; r=ET.parse('$report').getroot(); i=[x for x in r.iter('issue') if x.get('severity')=='Error']
+          print('::notice title=Lint::'+str(len(i))+' errors, '+str(len([x for x in r.iter('issue') if x.get('severity')=='Warning']))+' warnings')
+          [print('::error title=Lint '+x.get('id')+'::'+x.get('message')+' ('+(x.find('location').get('file') if x.find('location') is not None else '?')+')') for x in i]" || true
           else
-            echo "No lint XML report was produced."
+            echo "::notice title=Lint::no XML report produced"
           fi
 
       - name: Upload reports and APK
