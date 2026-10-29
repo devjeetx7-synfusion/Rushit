@@ -5,6 +5,8 @@ import com.rushit.app.data.model.Product
 import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.domain.categoriesForMode
 import com.rushit.app.domain.productsForMode
+import com.rushit.app.domain.productsForSelection
+import com.rushit.app.domain.resolveCategorySelection
 import com.rushit.app.domain.updateModeCart
 import com.rushit.app.domain.isValidDeliveryAddress
 import com.rushit.app.domain.maskedIndianMobile
@@ -15,6 +17,7 @@ import com.rushit.app.domain.isValidIndianMobile
 import com.rushit.app.domain.searchProducts
 import com.rushit.app.domain.updateCart
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -94,6 +97,25 @@ class StoreLogicTest {
         assertFalse(isValidDeliveryAddress("12 Main Road", "Patna", "8000A1"))
         assertEquals("+91 ••••••3210", maskedIndianMobile("9876543210"))
         assertEquals("your mobile number", maskedIndianMobile("123"))
+    }
+
+    @Test fun `category selection is validated against the active mode`() {
+        val allCategories = categories + Category("home", "Home", sortOrder = 0, mode = ShoppingMode.ECOMMERCE)
+        assertEquals("produce", resolveCategorySelection(allCategories, ShoppingMode.GROCERY, "produce"))
+        assertNull("a grocery category must not survive a mode change", resolveCategorySelection(allCategories, ShoppingMode.ECOMMERCE, "produce"))
+        assertNull(resolveCategorySelection(allCategories, ShoppingMode.GROCERY, "home"))
+        assertNull(resolveCategorySelection(allCategories, ShoppingMode.GROCERY, "does-not-exist"))
+        assertNull(resolveCategorySelection(allCategories, ShoppingMode.GROCERY, null))
+    }
+
+    @Test fun `products for selection stay inside the mode and category`() {
+        val lamp = Product("lamp", "Lamp", "", "home", pricePaise = 99_900, unit = "1", mode = ShoppingMode.ECOMMERCE)
+        val all = listOf(tomato, milk, lamp)
+        assertEquals(listOf(tomato), productsForSelection(all, ShoppingMode.GROCERY, "produce"))
+        assertEquals(listOf(tomato, milk), productsForSelection(all, ShoppingMode.GROCERY, null))
+        assertEquals(listOf(lamp), productsForSelection(all, ShoppingMode.ECOMMERCE, null))
+        assertTrue(productsForSelection(all, ShoppingMode.GIFTS, null).isEmpty())
+        assertTrue(productsForSelection(all, ShoppingMode.GROCERY, "home").isEmpty())
     }
 
     @Test fun `recent searches are bounded sanitized and case insensitive`() {

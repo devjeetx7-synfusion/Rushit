@@ -1,11 +1,13 @@
 package com.rushit.app.ui.navigation
 
 import android.net.Uri
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +57,8 @@ import com.rushit.app.ui.screens.store.OrdersScreen
 import com.rushit.app.ui.screens.store.ProductListingScreen
 import com.rushit.app.ui.screens.store.SearchScreen
 import com.rushit.app.ui.theme.Cream
+import com.rushit.app.ui.theme.LocalReducedMotion
+import com.rushit.app.ui.theme.rememberReducedMotion
 import com.rushit.app.ui.viewmodel.AuthEvent
 import com.rushit.app.ui.viewmodel.AuthViewModel
 import com.rushit.app.ui.viewmodel.ShopViewModel
@@ -101,118 +106,143 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = Cream,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        bottomBar = {
-            if (showTabs || showSummary) {
-                Column(Modifier.fillMaxWidth().background(Cream).navigationBarsPadding()) {
-                    if (showSummary) CartSummary(shopState.totals, onClick = { nav.navigate("cart") { launchSingleTop = true } }, isSample = shopState.isSample)
-                    if (showTabs && route != null) RushBottomBar(route, onSelect = ::selectMain)
-                }
-            }
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            NavHost(navController = nav, startDestination = "splash", modifier = Modifier.fillMaxSize()) {
-                // Keep a restored stack inert until a fresh process has checked its session.
-                composable("splash") { }
-                composable("login") {
-                    if (!needsStartupRoute) LoginScreen(authState, auth::updatePhone, onContinue = { auth.requestOtp() }, onBrowseSample = auth::browseSampleStore)
-                }
-                composable("otp") {
-                    if (!needsStartupRoute) OtpScreen(authState, onBack = { auth.clearMessage(); nav.popBackStack() }, onOtpChange = auth::updateOtp,
-                        onVerify = auth::verifyOtp, onResend = { auth.requestOtp(resend = true) })
-                }
-                composable("home") {
-                    if (!needsStartupRoute) HomeScreen(
-                        state = shopState,
-                        onSearch = { shop.updateSearch(""); shop.selectSearchCategory(null); nav.navigate("search") { launchSingleTop = true } },
-                        onCategory = ::openCategory,
-                        onSeeAll = { nav.navigate(if (shopState.selectedMode == ShoppingMode.GROCERY) "bestsellers" else "all") { launchSingleTop = true } },
-                        onShopNow = { nav.navigate("all") { launchSingleTop = true } },
-                        onAccount = { selectMain("account") },
-                        onCart = { nav.navigate("cart") { launchSingleTop = true } },
-                        onAddress = { nav.navigate("addresses") { launchSingleTop = true } },
-                        onModeSelected = shop::selectMode,
-                        onProduct = ::openProduct,
-                        onAdd = { shop.changeQuantity(it, 1) },
-                        onWishlist = shop::toggleWishlist,
-                        onRetry = shop::loadCatalog,
-                    )
-                }
-                composable("categories") {
-                    if (!needsStartupRoute) CategoriesScreen(shopState, onModeSelected = shop::selectMode, onCategory = ::openCategory, onRetry = shop::loadCatalog)
-                }
-                composable("orders") { if (!needsStartupRoute) OrdersScreen(onHome = { selectMain("home") }, onTracking = { nav.navigate("tracking") { launchSingleTop = true } }) }
-                composable("account") {
-                    if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
-                        onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn)
-                }
-                composable("search") {
-                    if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,
-                        onSubmit = shop::recordSearch, onRecent = { shop.updateSearch(it); shop.recordSearch() }, onClearRecent = shop::clearRecentSearches,
-                        onCategoryFilter = shop::selectSearchCategory,
-                        onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
-                }
-                composable("all") {
-                    if (!needsStartupRoute) ProductListingScreen("All ${shopState.selectedMode.label}", modeProducts, shopState, onBack = { nav.popBackStack() },
-                        onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
-                        emptyMessage = "No products have been configured for this mode yet.")
-                }
-                composable("bestsellers") {
-                    if (!needsStartupRoute) ProductListingScreen("Bestsellers", modeProducts.filter { it.isBestseller }, shopState, onBack = { nav.popBackStack() },
-                        onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
-                }
-                composable("wishlist") {
-                    if (!needsStartupRoute) ProductListingScreen("Wishlist", modeProducts.filter { it.id in shopState.wishlist }, shopState,
-                        onBack = { nav.popBackStack() }, onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist,
-                        onProduct = ::openProduct, onRetry = shop::loadCatalog, emptyTitle = "No saved ${shopState.selectedMode.label.lowercase()} items",
-                        emptyMessage = "Tap a heart to save an item. Switch modes to see saved items from another mode.")
-                }
-                composable("category/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
-                    if (!needsStartupRoute) {
-                        val id = backStackEntry.arguments?.getString("id").orEmpty()
-                        val category = modeCategories.firstOrNull { it.id == id }
-                        ProductListingScreen(category?.name ?: "Category", modeProducts.filter { it.categoryId == id }, shopState, onBack = { nav.popBackStack() },
-                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
-                            category = category, emptyMessage = "No products are configured in this category yet.")
+    CompositionLocalProvider(LocalReducedMotion provides rememberReducedMotion()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Cream,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            bottomBar = {
+                if (showTabs || showSummary) {
+                    Column(Modifier.fillMaxWidth().background(Cream).navigationBarsPadding()) {
+                        AnimatedVisibility(
+                            visible = showSummary,
+                            enter = slideInVertically(tween(220)) { height -> height / 2 } + fadeIn(tween(180)),
+                            exit = slideOutVertically(tween(180)) { height -> height / 2 } + fadeOut(tween(140)),
+                        ) {
+                            CartSummary(
+                                totals = shopState.totals,
+                                onClick = { nav.navigate("cart") { launchSingleTop = true } },
+                                isSample = shopState.isSample,
+                            )
+                        }
+                        if (showTabs && route != null) RushBottomBar(route, onSelect = ::selectMain)
                     }
                 }
-                composable("product/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
-                    if (!needsStartupRoute) ProductDetailsScreen(shopState, backStackEntry.arguments?.getString("id").orEmpty(),
-                        onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity, onWishlist = shop::toggleWishlist,
-                        onCart = { nav.navigate("cart") { launchSingleTop = true } }, onRetry = shop::loadCatalog)
-                }
-                composable("cart") {
-                    if (!needsStartupRoute) CartScreen(shopState, onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity,
-                        onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onAddress = { nav.navigate("addresses") { launchSingleTop = true } }, onProduct = ::openProduct)
-                }
-                composable("addresses") {
-                    if (!needsStartupRoute) AddressScreen(shopState, onBack = { nav.popBackStack() }, onSelect = shop::selectAddress,
-                        onDelete = shop::removeAddress, onSave = shop::saveAddress)
-                }
-                composable("checkout") {
-                    if (!needsStartupRoute) CheckoutScreen(shopState, onBack = { nav.popBackStack() }, onAddress = { nav.navigate("addresses") { launchSingleTop = true } })
-                }
-                composable("tracking") { if (!needsStartupRoute) TrackingScreen(onBack = { nav.popBackStack() }) }
-
-            }
-            AnimatedVisibility(
-                visible = needsStartupRoute,
-                modifier = Modifier.fillMaxSize(),
-                enter = EnterTransition.None,
-                exit = fadeOut(animationSpec = tween(220)),
-            ) {
-                SplashScreen(authState) { authenticated ->
-                    if (needsStartupRoute) {
-                        nav.navigate(if (authenticated) "home" else "login") {
-                            popUpTo(nav.graph.id) { inclusive = true }
-                            launchSingleTop = true
+            },
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                NavHost(navController = nav, startDestination = "splash", modifier = Modifier.fillMaxSize()) {
+                    // Keep a restored stack inert until a fresh process has checked its session.
+                    composable("splash") { }
+                    composable("login") {
+                        if (!needsStartupRoute) LoginScreen(authState, auth::updatePhone, onContinue = { auth.requestOtp() }, onBrowseSample = auth::browseSampleStore)
+                    }
+                    composable("otp") {
+                        if (!needsStartupRoute) OtpScreen(authState, onBack = { auth.clearMessage(); nav.popBackStack() }, onOtpChange = auth::updateOtp,
+                            onVerify = auth::verifyOtp, onResend = { auth.requestOtp(resend = true) })
+                    }
+                    composable("home") {
+                        if (!needsStartupRoute) HomeScreen(
+                            state = shopState,
+                            onSearch = { shop.updateSearch(""); shop.selectSearchCategory(null); nav.navigate("search") { launchSingleTop = true } },
+                            onSeeAll = {
+                                val categoryId = shopState.selectedCategoryId
+                                nav.navigate(
+                                    when {
+                                        categoryId != null -> "category/${Uri.encode(categoryId)}"
+                                        shopState.selectedMode == ShoppingMode.GROCERY -> "bestsellers"
+                                        else -> "all"
+                                    },
+                                ) { launchSingleTop = true }
+                            },
+                            onShopNow = { nav.navigate("all") { launchSingleTop = true } },
+                            onAccount = { selectMain("account") },
+                            onCart = { nav.navigate("cart") { launchSingleTop = true } },
+                            onAddress = { nav.navigate("addresses") { launchSingleTop = true } },
+                            onModeSelected = shop::selectMode,
+                            onCategorySelected = shop::selectCategory,
+                            onProduct = ::openProduct,
+                            onAdd = { shop.changeQuantity(it, 1) },
+                            onWishlist = shop::toggleWishlist,
+                            onRetry = shop::loadCatalog,
+                        )
+                    }
+                    composable("categories") {
+                        if (!needsStartupRoute) CategoriesScreen(
+                            state = shopState,
+                            onModeSelected = shop::selectMode,
+                            onCategory = { id -> shop.selectCategory(id); openCategory(id) },
+                            onRetry = shop::loadCatalog,
+                        )
+                    }
+                    composable("orders") { if (!needsStartupRoute) OrdersScreen(onHome = { selectMain("home") }, onTracking = { nav.navigate("tracking") { launchSingleTop = true } }) }
+                    composable("account") {
+                        if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
+                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn)
+                    }
+                    composable("search") {
+                        if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,
+                            onSubmit = shop::recordSearch, onRecent = { shop.updateSearch(it); shop.recordSearch() }, onClearRecent = shop::clearRecentSearches,
+                            onCategoryFilter = shop::selectSearchCategory,
+                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
+                    }
+                    composable("all") {
+                        if (!needsStartupRoute) ProductListingScreen("All ${shopState.selectedMode.label}", modeProducts, shopState, onBack = { nav.popBackStack() },
+                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
+                            emptyMessage = "No products have been configured for this mode yet.")
+                    }
+                    composable("bestsellers") {
+                        if (!needsStartupRoute) ProductListingScreen("Bestsellers", modeProducts.filter { it.isBestseller }, shopState, onBack = { nav.popBackStack() },
+                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
+                    }
+                    composable("wishlist") {
+                        if (!needsStartupRoute) ProductListingScreen("Wishlist", modeProducts.filter { it.id in shopState.wishlist }, shopState,
+                            onBack = { nav.popBackStack() }, onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist,
+                            onProduct = ::openProduct, onRetry = shop::loadCatalog, emptyTitle = "No saved ${shopState.selectedMode.label.lowercase()} items",
+                            emptyMessage = "Tap a heart to save an item. Switch modes to see saved items from another mode.")
+                    }
+                    composable("category/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        if (!needsStartupRoute) {
+                            val id = backStackEntry.arguments?.getString("id").orEmpty()
+                            val category = modeCategories.firstOrNull { it.id == id }
+                            ProductListingScreen(category?.name ?: "Category", modeProducts.filter { it.categoryId == id }, shopState, onBack = { nav.popBackStack() },
+                                onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
+                                category = category, emptyMessage = "No products are configured in this category yet.")
                         }
-                        auth.markStartupRouted()
-                        needsStartupRoute = false
+                    }
+                    composable("product/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        if (!needsStartupRoute) ProductDetailsScreen(shopState, backStackEntry.arguments?.getString("id").orEmpty(),
+                            onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity, onWishlist = shop::toggleWishlist,
+                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onRetry = shop::loadCatalog)
+                    }
+                    composable("cart") {
+                        if (!needsStartupRoute) CartScreen(shopState, onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity,
+                            onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onAddress = { nav.navigate("addresses") { launchSingleTop = true } }, onProduct = ::openProduct)
+                    }
+                    composable("addresses") {
+                        if (!needsStartupRoute) AddressScreen(shopState, onBack = { nav.popBackStack() }, onSelect = shop::selectAddress,
+                            onDelete = shop::removeAddress, onSave = shop::saveAddress)
+                    }
+                    composable("checkout") {
+                        if (!needsStartupRoute) CheckoutScreen(shopState, onBack = { nav.popBackStack() }, onAddress = { nav.navigate("addresses") { launchSingleTop = true } })
+                    }
+                    composable("tracking") { if (!needsStartupRoute) TrackingScreen(onBack = { nav.popBackStack() }) }
+                }
+                AnimatedVisibility(
+                    visible = needsStartupRoute,
+                    modifier = Modifier.fillMaxSize(),
+                    enter = EnterTransition.None,
+                    exit = fadeOut(animationSpec = tween(220)),
+                ) {
+                    SplashScreen(authState) { authenticated ->
+                        if (needsStartupRoute) {
+                            nav.navigate(if (authenticated) "home" else "login") {
+                                popUpTo(nav.graph.id) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                            auth.markStartupRouted()
+                            needsStartupRoute = false
+                        }
                     }
                 }
             }

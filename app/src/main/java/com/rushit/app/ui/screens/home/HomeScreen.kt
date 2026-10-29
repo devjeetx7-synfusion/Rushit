@@ -1,5 +1,16 @@
 package com.rushit.app.ui.screens.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,17 +31,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,22 +53,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rushit.app.R
+import com.rushit.app.data.model.Product
 import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.domain.categoriesForMode
-import com.rushit.app.domain.productsForMode
-import com.rushit.app.ui.components.CategoryItem
+import com.rushit.app.domain.productsForSelection
+import com.rushit.app.ui.components.CategoryRail
 import com.rushit.app.ui.components.MessageCard
 import com.rushit.app.ui.components.ProductCard
 import com.rushit.app.ui.components.RoundIconButton
 import com.rushit.app.ui.components.RushIcon
-import com.rushit.app.ui.components.SectionHeader
 import com.rushit.app.ui.components.ShoppingModeSwitcher
 import com.rushit.app.ui.theme.BannerPeach
 import com.rushit.app.ui.theme.Border
@@ -66,21 +77,25 @@ import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.CtaRed
 import com.rushit.app.ui.theme.Ink
+import com.rushit.app.ui.theme.LocalReducedMotion
+import com.rushit.app.ui.theme.Motion
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
+import com.rushit.app.ui.theme.motionDuration
 import com.rushit.app.ui.viewmodel.ShopUiState
+import kotlinx.coroutines.delay
 
 @Composable
 fun HomeScreen(
     state: ShopUiState,
     onSearch: () -> Unit,
-    onCategory: (String) -> Unit,
     onSeeAll: () -> Unit,
     onShopNow: () -> Unit,
     onAccount: () -> Unit,
     onCart: () -> Unit,
     onAddress: () -> Unit,
     onModeSelected: (ShoppingMode) -> Unit,
+    onCategorySelected: (String?) -> Unit,
     onProduct: (String) -> Unit,
     onAdd: (String) -> Unit,
     onWishlist: (String) -> Unit,
@@ -89,112 +104,171 @@ fun HomeScreen(
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val categories = remember(state.categories, state.selectedMode) { categoriesForMode(state.categories, state.selectedMode) }
-    val products = remember(state.products, state.selectedMode) { productsForMode(state.products, state.selectedMode) }
-    val featured = remember(products, state.selectedMode) {
-        if (state.selectedMode == ShoppingMode.GROCERY) products.filter { it.isBestseller } else products
+    val selectedCategory = remember(categories, state.selectedCategoryId) { categories.firstOrNull { it.id == state.selectedCategoryId } }
+    val products = remember(state.products, state.selectedMode, state.selectedCategoryId) {
+        productsForSelection(state.products, state.selectedMode, state.selectedCategoryId)
     }
-    LazyColumn(Modifier.fillMaxSize().background(Cream), state = listState, contentPadding = PaddingValues(bottom = 20.dp)) {
+    val sectionTitle = selectedCategory?.name ?: when (state.selectedMode) {
+        ShoppingMode.GROCERY -> "Bestsellers"
+        ShoppingMode.ECOMMERCE -> "Explore examples"
+        ShoppingMode.GIFTS -> "Gift collections"
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(Cream),
+        state = listState,
+        contentPadding = PaddingValues(bottom = 18.dp),
+    ) {
         item(key = "header") {
             LocationHeader(state.address, onAddress = onAddress, onNotifications = { showNotifications = true }, onAccount = onAccount)
         }
         item(key = "search") {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
-                RoundIconButton(R.drawable.ic_shopping_cart_01, "Open ${state.selectedMode.label} cart", onCart, background = CardWhite, tint = Coral)
+                RoundIconButton(
+                    R.drawable.ic_shopping_cart_01,
+                    "Open ${state.selectedMode.label} cart",
+                    onCart,
+                    background = CardWhite,
+                    tint = Coral,
+                    badge = state.totals.itemCount,
+                )
             }
         }
         item(key = "banner") {
-            PromoBanner(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
+            PromoBannerCarousel(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
         }
         if (state.isSample) {
             item(key = "sample") {
-                Text("Sample products · Illustrative prices", color = Muted, style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(start = 18.dp, top = 7.dp, bottom = 2.dp))
+                Text(
+                    "Sample products · Illustrative prices",
+                    color = Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 18.dp, top = 8.dp),
+                )
             }
         }
         item(key = "shopping_modes") {
-            ShoppingModeSwitcher(state.selectedMode, onModeSelected, Modifier.padding(top = 5.dp, bottom = 8.dp))
+            ShoppingModeSwitcher(
+                selectedMode = state.selectedMode,
+                onModeSelected = onModeSelected,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            )
         }
-        when {
-            state.loading -> item(key = "loading") {
-                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Coral)
-                }
+        item(key = "categories") {
+            if (categories.isNotEmpty()) {
+                CategoryRail(
+                    categories = categories,
+                    selectedCategoryId = state.selectedCategoryId,
+                    onCategorySelected = onCategorySelected,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
             }
-            state.error != null -> item(key = "error") {
-                MessageCard("Couldn't load the catalog", state.error, Modifier.padding(16.dp), icon = R.drawable.ic_help_circle, action = "Try again", onAction = onRetry)
-            }
-            else -> {
-                if (categories.isNotEmpty()) item(key = "categories") {
-                    LazyRow(contentPadding = PaddingValues(start = 14.dp, end = 20.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(categories, key = { it.id }) { category -> CategoryItem(category, onClick = { onCategory(category.id) }) }
-                    }
-                }
-                item(key = "best_header") {
-                    val title = when (state.selectedMode) {
-                        ShoppingMode.GROCERY -> "Bestsellers"
-                        ShoppingMode.ECOMMERCE -> "Explore examples"
-                        ShoppingMode.GIFTS -> "Gift collections"
-                    }
-                    SectionHeader(title, if (featured.isNotEmpty()) "See All" else null,
-                        if (featured.isNotEmpty()) onSeeAll else null,
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 5.dp))
-                }
-                if (featured.isEmpty()) {
-                    item(key = "best_empty") {
-                        val message = when (state.selectedMode) {
-                            ShoppingMode.GIFTS -> "Gift inventory isn't configured yet. Explore the categories for a preview."
-                            ShoppingMode.ECOMMERCE -> "No e-commerce listings have been configured yet."
-                            ShoppingMode.GROCERY -> "Check back later for featured groceries."
-                        }
-                        MessageCard("Nothing here yet", message, Modifier.padding(horizontal = 16.dp))
-                    }
-                } else {
-                    item(key = "best_products") {
-                        BoxWithConstraints(Modifier.fillMaxWidth()) {
-                            val cardWidth = ((maxWidth - 48.dp) / 3).coerceIn(100.dp, 145.dp)
-                            LazyRow(contentPadding = PaddingValues(start = 16.dp, end = 20.dp, top = 5.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(featured, key = { it.id }) { product ->
-                                    ProductCard(product, state.quantityFor(product), product.id in state.wishlist,
-                                        onAdd = { onAdd(product.id) }, onWishlist = { onWishlist(product.id) },
-                                        onOpen = { onProduct(product.id) }, width = cardWidth)
-                                }
-                            }
+        }
+        item(key = "section_header") {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = sectionTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!state.loading && state.error == null) {
+                        Row(
+                            Modifier.clip(RoundedCornerShape(12.dp))
+                                .clickable(role = Role.Button, onClickLabel = "See all $sectionTitle", onClick = onSeeAll)
+                                .padding(start = 10.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("See All", style = MaterialTheme.typography.labelMedium, color = Coral)
+                            Spacer(Modifier.width(4.dp))
+                            RushIcon(R.drawable.ic_arrow_right_01, null, Modifier.size(16.dp), Coral)
                         }
                     }
                 }
+                Text(
+                    text = when {
+                        state.loading -> "Loading the catalog…"
+                        state.error != null -> "Catalog unavailable"
+                        selectedCategory != null -> "${products.size} ${if (products.size == 1) "item" else "items"} in ${selectedCategory.name}"
+                        else -> "${products.size} ${if (products.size == 1) "item" else "items"} · ${state.selectedMode.label}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
+        }
+        item(key = "products") {
+            ProductSection(
+                state = state,
+                onAdd = onAdd,
+                onWishlist = onWishlist,
+                onProduct = onProduct,
+                onRetry = onRetry,
+                onBrowseAll = { onCategorySelected(null) },
+            )
         }
     }
+
     if (showNotifications) {
-        AlertDialog(onDismissRequest = { showNotifications = false }, title = { Text("Notifications") },
+        AlertDialog(
+            onDismissRequest = { showNotifications = false },
+            title = { Text("Notifications") },
             text = { Text("Notifications aren't connected yet. We'll show updates here when they are available.") },
-            confirmButton = { TextButton(onClick = { showNotifications = false }) { Text("Got it") } }, containerColor = CardWhite)
+            confirmButton = { TextButton(onClick = { showNotifications = false }) { Text("Got it") } },
+            containerColor = CardWhite,
+        )
     }
 }
 
 @Composable
 private fun LocationHeader(address: String?, onAddress: () -> Unit, onNotifications: () -> Unit, onAccount: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 12.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClickLabel = "Choose delivery address", onClick = onAddress).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 14.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                .clickable(role = Role.Button, onClickLabel = "Choose delivery address", onClick = onAddress)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(Peach), contentAlignment = Alignment.Center) {
-                RushIcon(R.drawable.ic_location_01, null, Modifier.size(26.dp), Coral)
+                RushIcon(R.drawable.ic_location_01, null, Modifier.size(24.dp), Coral)
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Text("Deliver to", color = Muted, style = MaterialTheme.typography.bodySmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(address ?: "Select delivery location", color = Ink, style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(
+                        address ?: "Select delivery location",
+                        color = Ink,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
                     Spacer(Modifier.width(3.dp))
-                    RushIcon(R.drawable.ic_arrow_down_01, null, Modifier.size(15.dp), Ink)
+                    RushIcon(R.drawable.ic_arrow_down_01, null, Modifier.size(14.dp), Ink)
                 }
-                Text(if (address == null) "Add an address to get started" else "Saved on this device", color = Muted,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    if (address == null) "Add an address to get started" else "Saved on this device",
+                    color = Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
-        Spacer(Modifier.width(3.dp))
+        Spacer(Modifier.width(2.dp))
         RoundIconButton(R.drawable.ic_notification_01, "Notifications", onNotifications, background = Cream)
         RoundIconButton(R.drawable.ic_user_02, "Account", onAccount, background = Peach.copy(alpha = .7f))
     }
@@ -203,46 +277,237 @@ private fun LocationHeader(address: String?, onAddress: () -> Unit, onNotificati
 @Composable
 private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().heightIn(min = 54.dp).clip(CircleShape).background(CardWhite.copy(alpha = .76f))
+        modifier.heightIn(min = 54.dp).clip(CircleShape).background(CardWhite.copy(alpha = .76f))
             .border(1.dp, Border, CircleShape).clickable(role = Role.Button, onClickLabel = "Search products", onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        RushIcon(R.drawable.ic_search_01, null, Modifier.size(24.dp), Ink)
+        RushIcon(R.drawable.ic_search_01, null, Modifier.size(22.dp), Ink)
         Spacer(Modifier.width(12.dp))
-        Text(if (mode == ShoppingMode.GROCERY) "Search for milk, fruits, snacks..." else "Search ${mode.label.lowercase()}...", color = Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            if (mode == ShoppingMode.GROCERY) "Search for milk, fruits, snacks…" else "Search ${mode.label.lowercase()}…",
+            color = Muted,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private data class PromoPage(val headline: String, val accent: String, val cta: String, val image: Int)
+
+private fun promoPages(mode: ShoppingMode): List<PromoPage> = when (mode) {
+    ShoppingMode.GROCERY -> listOf(
+        PromoPage("Everyday\nEssentials,", "Delivered.", "Shop Now", R.drawable.banner_groceries),
+        PromoPage("Fresh fruit\n& veggies,", "Picked today.", "Shop Now", R.drawable.product_tomatoes),
+        PromoPage("Snacks for\nthe evening,", "In minutes.", "Shop Now", R.drawable.category_snacks),
+    )
+    ShoppingMode.ECOMMERCE -> listOf(
+        PromoPage("Find more\nfor every day,", "Explore.", "Explore", R.drawable.ecommerce_headphones),
+        PromoPage("Warm light\nfor your home,", "Discover.", "Explore", R.drawable.ecommerce_lamp),
+        PromoPage("Beauty &\ncare picks,", "Browse.", "Explore", R.drawable.category_care),
+    )
+    ShoppingMode.GIFTS -> listOf(
+        PromoPage("Thoughtful gifts\nfor every", "moment.", "Explore", R.drawable.gift_bouquet),
+        PromoPage("Beauty &\nfragrance,", "Gift ready.", "Explore", R.drawable.category_care),
+        PromoPage("Gadgets made\nfor gifting,", "Explore.", "Explore", R.drawable.ecommerce_headphones),
+    )
+}
+
+/**
+ * Auto-advancing promo carousel. Rotation stops while the user drags and is disabled entirely when
+ * the system asks for reduced motion; it also stops naturally when Home leaves composition.
+ */
+@Composable
+private fun PromoBannerCarousel(mode: ShoppingMode, onShop: () -> Unit, modifier: Modifier = Modifier) {
+    val pages = remember(mode) { promoPages(mode) }
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val reduced = LocalReducedMotion.current
+
+    LaunchedEffect(pagerState, reduced, pages.size) {
+        if (reduced || pages.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(Motion.BANNER_AUTO_ADVANCE_MS)
+            if (!pagerState.isScrollInProgress) {
+                pagerState.animateScrollToPage((pagerState.currentPage + 1) % pages.size)
+            }
+        }
+    }
+
+    Column(modifier.fillMaxWidth()) {
+        HorizontalPager(
+            state = pagerState,
+            pageSpacing = 12.dp,
+            modifier = Modifier.fillMaxWidth().height(162.dp),
+        ) { index ->
+            PromoCard(pages[index], onShop)
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
+            pages.indices.forEach { index ->
+                val active = index == pagerState.currentPage
+                val width by animateDpAsState(if (active) 18.dp else 6.dp, label = "banner dot")
+                Box(
+                    Modifier.padding(horizontal = 3.dp).height(6.dp).width(width)
+                        .clip(CircleShape).background(if (active) Coral else Border),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun PromoBanner(mode: ShoppingMode, onShop: () -> Unit, modifier: Modifier = Modifier) {
-    val image = when (mode) {
-        ShoppingMode.GROCERY -> R.drawable.banner_groceries
-        ShoppingMode.ECOMMERCE -> R.drawable.ecommerce_headphones
-        ShoppingMode.GIFTS -> R.drawable.gift_bouquet
-    }
-    val headline = when (mode) {
-        ShoppingMode.GROCERY -> "Everyday\nEssentials,"
-        ShoppingMode.ECOMMERCE -> "Find more\nfor every day,"
-        ShoppingMode.GIFTS -> "Thoughtful gifts\nfor every"
-    }
-    val accent = when (mode) {
-        ShoppingMode.GROCERY -> "Delivered."
-        ShoppingMode.ECOMMERCE -> "Explore."
-        ShoppingMode.GIFTS -> "moment."
-    }
-    BoxWithConstraints(modifier.fillMaxWidth().heightIn(min = 164.dp).clip(RoundedCornerShape(22.dp)).background(BannerPeach)) {
+private fun PromoCard(page: PromoPage, onShop: () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(162.dp).clip(RoundedCornerShape(22.dp)).background(BannerPeach)) {
         val fadeEnd = with(LocalDensity.current) { maxWidth.toPx() * .68f }
-        Image(painterResource(image), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(BannerPeach, BannerPeach.copy(alpha = .94f), Color.Transparent), endX = fadeEnd)))
-        Column(Modifier.widthIn(max = 200.dp).padding(start = 20.dp, top = 18.dp, bottom = 17.dp)) {
-            Text(headline, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Ink)
-            Text(accent, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Coral)
+        Image(painterResource(page.image), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(listOf(BannerPeach, BannerPeach.copy(alpha = .94f), Color.Transparent), endX = fadeEnd),
+            ),
+        )
+        Column(Modifier.widthIn(max = 210.dp).padding(start = 20.dp, top = 18.dp, bottom = 17.dp)) {
+            Text(page.headline, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Ink, maxLines = 2)
+            Text(page.accent, style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp, lineHeight = 26.sp), color = Coral, maxLines = 1)
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.clip(CircleShape).background(CtaRed).clickable(role = Role.Button, onClickLabel = "Explore ${mode.label}", onClick = onShop)
-                .padding(horizontal = 15.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (mode == ShoppingMode.GROCERY) "Shop Now" else "Explore", color = CardWhite, style = MaterialTheme.typography.labelMedium)
+            Row(
+                Modifier.clip(CircleShape).background(CtaRed)
+                    .clickable(role = Role.Button, onClickLabel = page.cta, onClick = onShop)
+                    .padding(horizontal = 15.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(page.cta, color = CardWhite, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.width(5.dp))
                 RushIcon(R.drawable.ic_arrow_right_01, null, Modifier.size(16.dp), CardWhite)
+            }
+        }
+    }
+}
+
+private data class ProductSectionKey(val mode: ShoppingMode, val categoryId: String?, val phase: String)
+
+@Composable
+private fun ProductSection(
+    state: ShopUiState,
+    onAdd: (String) -> Unit,
+    onWishlist: (String) -> Unit,
+    onProduct: (String) -> Unit,
+    onRetry: () -> Unit,
+    onBrowseAll: () -> Unit,
+) {
+    val reduced = LocalReducedMotion.current
+    val phase = when {
+        state.loading -> "loading"
+        state.error != null -> "error"
+        else -> "content"
+    }
+    val target = ProductSectionKey(state.selectedMode, state.selectedCategoryId, phase)
+    val duration = motionDuration(Motion.CONTENT_TRANSITION, reduced)
+
+    AnimatedContent(
+        targetState = target,
+        transitionSpec = {
+            (fadeIn(tween(duration)) + slideInVertically(tween(duration)) { height -> height / 24 })
+                .togetherWith(fadeOut(tween(duration / 2)))
+        },
+        label = "product section",
+    ) { section ->
+        when (section.phase) {
+            "loading" -> ProductSkeleton()
+            "error" -> MessageCard(
+                "Couldn't load the catalog",
+                state.error.orEmpty(),
+                Modifier.padding(horizontal = 16.dp),
+                icon = R.drawable.ic_help_circle,
+                action = "Try again",
+                onAction = onRetry,
+            )
+            else -> {
+                // Derive from the transition's own key so outgoing content never shows new products.
+                val items = remember(section.mode, section.categoryId, state.products) {
+                    productsForSelection(state.products, section.mode, section.categoryId)
+                }
+                if (items.isEmpty()) {
+                    EmptyProducts(section.mode, section.categoryId, onBrowseAll)
+                } else {
+                    ProductRows(items, state, onAdd, onWishlist, onProduct)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductRows(
+    products: List<Product>,
+    state: ShopUiState,
+    onAdd: (String) -> Unit,
+    onWishlist: (String) -> Unit,
+    onProduct: (String) -> Unit,
+) {
+    val rows = remember(products) { products.chunked(2) }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        rows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { product ->
+                    ProductCard(
+                        product = product,
+                        quantity = state.quantityFor(product),
+                        wished = product.id in state.wishlist,
+                        onAdd = { onAdd(product.id) },
+                        onWishlist = { onWishlist(product.id) },
+                        onOpen = { onProduct(product.id) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyProducts(mode: ShoppingMode, categoryId: String?, onBrowseAll: () -> Unit) {
+    val message = when {
+        categoryId != null -> "No products are configured in this category yet."
+        mode == ShoppingMode.GIFTS -> "Gift inventory isn't configured yet. Explore the categories for a preview."
+        mode == ShoppingMode.ECOMMERCE -> "No e-commerce listings have been configured yet."
+        else -> "Check back later for featured groceries."
+    }
+    MessageCard(
+        title = "Nothing here yet",
+        message = message,
+        modifier = Modifier.padding(horizontal = 16.dp),
+        action = if (categoryId != null) "Browse all" else null,
+        onAction = onBrowseAll,
+    )
+}
+
+@Composable
+private fun ProductSkeleton() {
+    val reduced = LocalReducedMotion.current
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val pulse by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "skeleton pulse",
+    )
+    val alpha = if (reduced) 0.7f else pulse
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        repeat(2) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(2) {
+                    Box(
+                        Modifier.weight(1f).height(196.dp).clip(RoundedCornerShape(20.dp))
+                            .background(Peach.copy(alpha = alpha)),
+                    )
+                }
             }
         }
     }
