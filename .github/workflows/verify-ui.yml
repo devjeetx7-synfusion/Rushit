@@ -38,9 +38,13 @@ jobs:
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain 2>&1 | tee /tmp/gradle-build.log
           status=${PIPESTATUS[0]}
           if [[ $status -ne 0 ]]; then
-            grep -nE "^(e: |w: .*error)|error:|Unresolved reference|Type mismatch|FAILURE:" /tmp/gradle-build.log | head -40 | while IFS= read -r line; do
-              echo "::error title=Build::${line//::/_}"
-            done
+            grep -E "^(e: )|error:|FAILURE:" /tmp/gradle-build.log | head -60 > /tmp/build-errors.txt || true
+            if [[ -s /tmp/build-errors.txt ]]; then
+              message="$(sed 's/%/%25/g' /tmp/build-errors.txt | paste -sd '\n' - | sed 's/::/_/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+              echo "::error title=Build errors (${status})::${message:0:6000}"
+            else
+              echo "::error title=Build failed without compiler errors::see task output"
+            fi
           fi
           exit $status
 

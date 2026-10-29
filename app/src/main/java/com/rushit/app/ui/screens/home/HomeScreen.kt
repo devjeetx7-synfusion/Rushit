@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -318,6 +319,7 @@ private fun promoPages(mode: ShoppingMode): List<PromoPage> = when (mode) {
  * Auto-advancing promo carousel. Rotation stops while the user drags and is disabled entirely when
  * the system asks for reduced motion; it also stops naturally when Home leaves composition.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PromoBannerCarousel(mode: ShoppingMode, onShop: () -> Unit, modifier: Modifier = Modifier) {
     val pages = remember(mode) { promoPages(mode) }
