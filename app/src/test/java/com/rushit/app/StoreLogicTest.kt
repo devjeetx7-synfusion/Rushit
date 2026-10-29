@@ -108,6 +108,26 @@ class StoreLogicTest {
         assertNull(resolveCategorySelection(allCategories, ShoppingMode.GROCERY, null))
     }
 
+    @Test fun `rapid mode switching always lands on a category of the new mode`() {
+        val allCategories = categories +
+            Category("e_home", "Home & Living", sortOrder = 0, mode = ShoppingMode.ECOMMERCE) +
+            Category("g_bouquets", "Bouquets", sortOrder = 0, mode = ShoppingMode.GIFTS)
+        var selected: String? = "produce"
+        var mode = ShoppingMode.GROCERY
+        listOf(
+            ShoppingMode.ECOMMERCE, ShoppingMode.GIFTS, ShoppingMode.GROCERY,
+            ShoppingMode.ECOMMERCE, ShoppingMode.ECOMMERCE, ShoppingMode.GIFTS,
+        ).forEach { next ->
+            selected = resolveCategorySelection(allCategories, next, selected)
+            mode = next
+            assertTrue(
+                "selection $selected is not valid for $mode",
+                selected == null || allCategories.any { it.id == selected && it.mode == mode },
+            )
+            assertEquals("re-resolving the same selection must be idempotent", selected, resolveCategorySelection(allCategories, mode, selected))
+        }
+    }
+
     @Test fun `products for selection stay inside the mode and category`() {
         val lamp = Product("lamp", "Lamp", "", "home", pricePaise = 99_900, unit = "1", mode = ShoppingMode.ECOMMERCE)
         val all = listOf(tomato, milk, lamp)

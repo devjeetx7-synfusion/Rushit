@@ -431,7 +431,7 @@ private fun ProductSection(
                 if (items.isEmpty()) {
                     EmptyProducts(section.mode, section.categoryId, onBrowseAll)
                 } else {
-                    ProductRows(items, state, onAdd, onWishlist, onProduct)
+                    ProductRows(items, state.cart, state.wishlist, onAdd, onWishlist, onProduct)
                 }
             }
         }
@@ -441,7 +441,8 @@ private fun ProductSection(
 @Composable
 private fun ProductRows(
     products: List<Product>,
-    state: ShopUiState,
+    cart: Map<String, Int>,
+    wishlist: Set<String>,
     onAdd: (String) -> Unit,
     onWishlist: (String) -> Unit,
     onProduct: (String) -> Unit,
@@ -456,8 +457,8 @@ private fun ProductRows(
                 row.forEach { product ->
                     ProductCard(
                         product = product,
-                        quantity = state.quantityFor(product),
-                        wished = product.id in state.wishlist,
+                        quantity = cart[product.id] ?: 0,
+                        wished = product.id in wishlist,
                         onAdd = { onAdd(product.id) },
                         onWishlist = { onWishlist(product.id) },
                         onOpen = { onProduct(product.id) },

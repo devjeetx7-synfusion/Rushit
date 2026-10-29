@@ -207,7 +207,9 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel) {
                             val category = modeCategories.firstOrNull { it.id == id }
                             ProductListingScreen(category?.name ?: "Category", modeProducts.filter { it.categoryId == id }, shopState, onBack = { nav.popBackStack() },
                                 onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
-                                category = category, emptyMessage = "No products are configured in this category yet.")
+                                category = category,
+                                emptyMessage = if (category == null) "This category isn't part of ${shopState.selectedMode.label}. Pick a category from the current mode."
+                                else "No products are configured in this category yet.")
                         }
                     }
                     composable("product/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->

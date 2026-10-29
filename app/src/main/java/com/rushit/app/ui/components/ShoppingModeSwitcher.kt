@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -93,17 +94,21 @@ fun ShoppingModeSwitcher(
             // A single animated fraction drives icon, label weight and colour together.
             val position = if (segmentWidth.value > 0f) indicatorOffset.value / segmentWidth.value else selectedIndex.toFloat()
 
-            Box(
-                Modifier
-                    .offset(x = indicatorOffset)
-                    .width(segmentWidth)
-                    .height(SEGMENT_HEIGHT_DP.dp)
-                    .shadow(if (reduced) 0.dp else 2.dp, RoundedCornerShape(20.dp))
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(CardWhite)
-                    .border(1.dp, Border.copy(alpha = 0.7f), RoundedCornerShape(20.dp)),
-            )
-            Row(Modifier.fillMaxWidth().height(SEGMENT_HEIGHT_DP.dp).selectableGroup()) {
+            // The indicator tracks the row height instead of a fixed size, so large font scales
+            // grow the control rather than clipping the two-line labels.
+            Box(Modifier.matchParentSize()) {
+                Box(
+                    Modifier
+                        .offset(x = indicatorOffset)
+                        .width(segmentWidth)
+                        .fillMaxHeight()
+                        .shadow(if (reduced) 0.dp else 2.dp, RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CardWhite)
+                        .border(1.dp, Border.copy(alpha = 0.7f), RoundedCornerShape(20.dp)),
+                )
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = SEGMENT_HEIGHT_DP.dp).selectableGroup()) {
                 modes.forEachIndexed { index, mode ->
                     val fraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
                     ModeSegment(
@@ -111,7 +116,7 @@ fun ShoppingModeSwitcher(
                         selected = mode == selectedMode,
                         fraction = fraction,
                         onClick = { onModeSelected(mode) },
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
