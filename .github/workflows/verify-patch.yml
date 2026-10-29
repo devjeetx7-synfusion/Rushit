@@ -1,6 +1,8 @@
 name: Verify applied patch (temporary)
 
 on:
+  push:
+    branches: [arena/214915fe-rushit]
   workflow_dispatch:
 
 permissions:
