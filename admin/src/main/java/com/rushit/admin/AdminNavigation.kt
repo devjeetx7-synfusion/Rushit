@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -117,12 +118,18 @@ fun AdminNavRail(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(vertical = 10.dp, horizontal = 8.dp)
-                .selectableGroup(),
+                .padding(vertical = 10.dp, horizontal = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             RushItBrandLogo(size = 40.dp)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .selectableGroup(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             items.forEach { item ->
                 val selected = selectedRoute == item.route
                 RailItem(
@@ -136,10 +143,11 @@ fun AdminNavRail(
                 )
                 Spacer(Modifier.height(4.dp))
             }
-            Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(brandSoft)
                     .clickable(role = Role.Button) { onOpenProfile() }
@@ -167,7 +175,10 @@ fun AdminNavSidebar(
     val themeConfig = LocalAdminThemeConfig.current
     val brand = themeConfig.activePrimary
     val brandSoft = themeConfig.activePrimarySoft
-    val items = remember { expandedNavItems() }
+    val permissions = LocalAdminPermissions.current
+    val items = remember(permissions) {
+        expandedNavItems().filter { permissions.allowsDestination(it.route) }
+    }
 
     Surface(
         modifier = modifier
@@ -276,6 +287,7 @@ private fun RailItem(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
             .clip(shape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .background(if (selected) brandSoft else Color.Transparent)
