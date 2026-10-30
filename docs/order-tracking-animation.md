@@ -84,8 +84,8 @@ inside characters; the board alpha was inspected before extraction.
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
-./gradlew :app:connectedDebugAndroidTest   # requires an emulator/device
 ```
 
-The temporary `Verify order tracking` workflow runs unit tests, debug build, lint, and Compose UI
-tests on an API 34 emulator for this branch.
+The `Verify order tracking` workflow runs the unit suite (including Robolectric-backed Compose
+tracking-screen tests), debug build, and lint for this branch. A physical-device smoke test is still
+recommended for audio, insets, and animation smoothness.
