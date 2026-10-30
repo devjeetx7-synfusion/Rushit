@@ -1,0 +1,93 @@
+name: RushIt Admin Build
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-admin-apk:
+    name: Build and verify signed Admin debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the selected ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Build Admin debug APK
+        run: ./gradlew :admin:assembleDebug --no-daemon --console=plain
+
+      - name: Verify Admin APK identity and test signature
+        shell: bash
+        env:
+          APK_PATH: admin/build/outputs/apk/debug/admin-debug.apk
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$APK_PATH" ]]; then
+            echo "::error::The expected RushIt Admin APK is missing or empty."
+            exit 1
+          fi
+          aapt="${ANDROID_HOME:?Android SDK is not configured}/build-tools/34.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          if [[ ! -x "$aapt" || ! -x "$apksigner" ]]; then
+            echo "::error::Android SDK Build-Tools 34.0.0 are unavailable."
+            exit 1
+          fi
+          if ! badging="$("$aapt" dump badging "$APK_PATH" 2>/dev/null)"; then
+            echo "::error::Could not read the Admin APK manifest."
+            exit 1
+          fi
+          package_name="$(printf '%s\n' "$badging" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          version_code="$(printf '%s\n' "$badging" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*/\1/p")"
+          if [[ "$package_name" != 'com.rushit.admin' ]]; then
+            echo "::error::Expected Admin application ID com.rushit.admin, found '$package_name'."
+            exit 1
+          fi
+          if [[ "$package_name" == 'com.rushit.app' ]]; then
+            echo "::error::Admin APK must not use the RushIt User application ID."
+            exit 1
+          fi
+          if [[ ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The Admin APK versionCode must be a positive integer."
+            exit 1
+          fi
+          if ! verification="$("$apksigner" verify --verbose --print-certs "$APK_PATH" 2>&1)"; then
+            echo "::error::RushIt Admin APK test-signature verification failed."
+            exit 1
+          fi
+          certificate="$(printf '%s\n' "$verification" | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: //p')"
+          if [[ ! "$certificate" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::Could not read the Admin APK signing certificate fingerprint."
+            exit 1
+          fi
+          echo "Verified signed RushIt Admin test APK (com.rushit.admin), versionCode $version_code."
+          echo "Debug certificate SHA-256: ${certificate,,}"
+
+      - name: Upload RushIt Admin APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rushit-admin-apk
+          path: admin/build/outputs/apk/debug/admin-debug.apk
+          if-no-files-found: error
