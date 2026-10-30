@@ -1,4 +1,4 @@
-name: Build test APK
+name: RushIt User Build
 
 on:
   workflow_dispatch:
