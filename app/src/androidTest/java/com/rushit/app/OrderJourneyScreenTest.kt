@@ -1,7 +1,7 @@
 package com.rushit.app
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +54,7 @@ class OrderJourneyScreenTest {
         rule.setContent {
             RushItTheme {
                 CompositionLocalProvider(LocalReducedMotion provides true) {
-                    Box(Modifier.size(width.dp, 820.dp)) {
+                    Box(Modifier.requiredSize(width.dp, 820.dp)) {
                         OrderJourneyScreen(
                             state = state,
                             onBack = onBack,
@@ -122,5 +122,29 @@ class OrderJourneyScreenTest {
         show(OrderUiState(order = order(OrderStatus.OUT_FOR_DELIVERY)), width = 600)
         rule.onNodeWithText("On the way!").assertIsDisplayed()
         rule.onNodeWithText("Preview next stage").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun everySupportedStageRendersItsTitle() {
+        val stages = listOf(
+            OrderStatus.CONFIRMED to "Order confirmed!",
+            OrderStatus.PREPARING to "Packing your order…",
+            OrderStatus.READY_FOR_PICKUP to "Your rider is ready!",
+            OrderStatus.PICKED_UP to "Order picked up!",
+            OrderStatus.OUT_FOR_DELIVERY to "On the way!",
+            OrderStatus.ARRIVING to "Almost there!",
+            OrderStatus.DELIVERED to "Delivered!",
+        )
+        var state by mutableStateOf(OrderUiState(order = order(OrderStatus.CONFIRMED), riderAssigned = true))
+        rule.setContent {
+            RushItTheme {
+                CompositionLocalProvider(LocalReducedMotion provides true) {
+                    OrderJourneyScreen(state, {}, {}, {}, {}, {}, {}, {})
+                }
+            }
+        }
+        stages.forEach { (status, title) ->
+            rule.runOnIdle { state = state.copy(order = state.order!!.copy(status = status)) }
+            rule.onNodeWithText(title).assertIsDisplayed()
+        }
     }
 }

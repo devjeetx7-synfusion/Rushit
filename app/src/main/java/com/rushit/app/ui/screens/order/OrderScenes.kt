@@ -357,27 +357,16 @@ fun DeliveryHandoverScene(order: Order, celebrate: Boolean) {
     }
     Column(Modifier.fillMaxWidth()) {
         OrderSceneContainer {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                Image(painterResource(R.drawable.order_delivered_bg), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                val density = LocalDensity.current
-                val w = with(density) { maxWidth.toPx() }
-                val h = with(density) { maxHeight.toPx() }
-                val scooterW = w * 0.35f
-                val scooterH = scooterW * 178f / 427f
-                val slide = (1f - enter.value) * -w * 0.08f
+            Box(Modifier.fillMaxSize()) {
                 Image(
-                    painterResource(R.drawable.order_scooter_parked), null,
-                    Modifier.offset(x = with(density) { slide.toDp() }, y = with(density) { (h - scooterH).toDp() })
-                        .size(with(density) { scooterW.toDp() }, with(density) { scooterH.toDp() })
-                        .graphicsLayer { alpha = enter.value },
-                )
-                val handoverH = h * 0.96f
-                val handoverW = handoverH * 310f / 204f
-                Image(
-                    painterResource(R.drawable.order_handover), "RushIt rider handing the groceries to the customer",
-                    Modifier.offset(x = with(density) { (w * 0.50f).toDp() }, y = with(density) { (h - handoverH).toDp() })
-                        .size(with(density) { handoverW.toDp() }, with(density) { handoverH.toDp() })
-                        .graphicsLayer { alpha = enter.value },
+                    painterResource(R.drawable.order_delivered),
+                    "RushIt rider handing the groceries to the customer at the door",
+                    Modifier.fillMaxSize().graphicsLayer {
+                        alpha = enter.value
+                        val s = 0.96f + 0.04f * enter.value
+                        scaleX = s; scaleY = s
+                    },
+                    contentScale = ContentScale.Crop,
                 )
                 SuccessCheck(Modifier.align(Alignment.TopEnd).padding(8.dp).size(40.dp), progress = tick.value)
             }

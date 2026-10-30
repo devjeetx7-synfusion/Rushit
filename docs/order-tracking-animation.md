@@ -59,8 +59,8 @@ Prepared lossless WebP assets in `app/src/main/res/drawable-nodpi/`:
 - `order_pickup` — original combined employee/rider handover illustration (see limitations).
 - `order_travel_bg/skyline/trees/road` — original travel background with the rider inpainted, then
   sliced into parallax bands.
-- `order_delivered_bg`, `order_handover`, `order_scooter_parked` — original doorway background with
-  people/scooter inpainted, plus the supplied standing handover pair and standalone scooter body.
+- `order_delivered` — original doorway handover illustration, kept combined because reliable separate
+  rider/customer/parcel layers were not available.
 
 RushIt branding on the delivery bag is preserved. No white/checkerboard background was removed from
 inside characters; the board alpha was inspected before extraction.
@@ -70,8 +70,9 @@ inside characters; the board alpha was inspected before extraction.
 - The supplied pickup illustration is a combined employee + rider + parcel image. Reliable separate
   parcel/employee/rider layers were not available, so pickup uses a restrained fade-in rather than a
   fake articulated handover.
-- The supplied walking poses were not used because the tracking journey travels by scooter; no walk
-  cycle was fabricated from a single pose.
+- The supplied walking poses and standing handover pair were not used because the tracking journey
+  travels by scooter and the original doorway scene already matches the storyboard; no walk cycle or
+  articulated handover was fabricated from a single pose.
 - Head/torso/arms were not split into independent puppets; the supplied seated rider is kept intact
   to avoid distortion.
 - Parallax bands are sliced from the original combined background, not hand-painted separate layers;
