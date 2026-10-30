@@ -22,11 +22,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import com.rushit.app.BuildConfig
+import com.rushit.app.ui.sound.OrderSound
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,10 +62,15 @@ fun OrdersScreen(
     onHome: () -> Unit,
     onOpenOrder: (String) -> Unit,
     onTracking: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Orders", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 18.dp))
-        if (state.orders.isEmpty()) {
+        if (state.ordersLoading) {
+            androidx.compose.material3.CircularProgressIndicator(color = Coral)
+        } else if (state.ordersError != null) {
+            MessageCard("Orders unavailable", state.ordersError, action = "Try again", onAction = onRetry)
+        } else if (state.orders.isEmpty()) {
             MessageCard(
                 "Your orders, all in one place",
                 "No orders have been placed from this device yet. Orders created here are demo orders, not live purchases.",
@@ -107,8 +118,15 @@ fun OrdersScreen(
 }
 
 @Composable
-fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit, onSettings: (() -> Unit)? = null) {
-    var showHelp by rememberSaveable { mutableStateOf(false) }
+fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit, onHelp: () -> Unit, onNotifications: () -> Unit) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    var soundEnabled by remember { mutableStateOf(OrderSound.isEnabled(context)) }
+    var info by rememberSaveable { mutableStateOf<String?>(null) }
+    fun openPolicy(url: String, title: String) {
+        if (!url.startsWith("https://")) info = "$title is not configured in this build."
+        else try { uriHandler.openUri(url) } catch (_: Exception) { info = "Couldn't open $title. Check your browser and try again." }
+    }
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Account", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 20.dp))
@@ -130,25 +148,41 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
         Spacer(Modifier.height(8.dp))
         AccountRow(R.drawable.ic_location_01, "Delivery addresses", shop.address ?: "Add an address", onAddresses)
         Spacer(Modifier.height(8.dp))
-        AccountRow(R.drawable.ic_help_circle, "Help", "Phone sign-in and sample store", { showHelp = true })
+        AccountRow(R.drawable.ic_user_02, "Profile", "Phone account information", { info = "Profile editing is not available. Sign-in uses your verified phone number." })
         Spacer(Modifier.height(8.dp))
-        if (onSettings != null) {
-            AccountRow(R.drawable.ic_grid_view, "Settings", "Development tools", onSettings)
-            Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_notification_01, "Notifications", "Updates and notification availability", onNotifications)
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_help_circle, "Help & Support", "Orders, account and common questions", onHelp)
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_lock_keyhole, "Privacy policy", "View policy", { openPolicy(BuildConfig.PRIVACY_URL, "Privacy policy") })
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_package_01, "Terms and conditions", "View terms", { openPolicy(BuildConfig.TERMS_URL, "Terms and conditions") })
+        Spacer(Modifier.height(8.dp))
+        AccountRow(R.drawable.ic_help_circle, "App information", "RushIt ${BuildConfig.VERSION_NAME}", { info = "RushIt ${BuildConfig.VERSION_NAME} · Demo shopping and device-local orders." })
+        Spacer(Modifier.height(8.dp))
+        Surface(shape = RoundedCornerShape(16.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Order confirmation sound", style = MaterialTheme.typography.labelLarge, color = Ink)
+                    Text("Also respects your device's sound settings", style = MaterialTheme.typography.bodySmall, color = Muted)
+                }
+                Switch(checked = soundEnabled, onCheckedChange = { soundEnabled = it; OrderSound.setEnabled(context, it) })
+            }
         }
+        Spacer(Modifier.height(8.dp))
         AccountRow(R.drawable.ic_logout_01, if (auth.authenticated) "Sign out" else "Sign in", if (auth.busy) "Please wait…" else "",
             { if (auth.authenticated) confirmSignOut = true else onSignInOrOut() }, enabled = !auth.busy)
         auth.error?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
         Spacer(Modifier.height(24.dp))
-        Text(if (shop.isSample) "Sample catalog · No live inventory, orders or checkout" else "Orders and checkout are not connected yet", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(horizontal = 4.dp))
+        Text(if (shop.isSample) "Sample catalog · Demo checkout only; no live inventory or delivery" else "Orders and checkout are not connected yet", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(horizontal = 4.dp))
     }
     if (confirmSignOut) AlertDialog(onDismissRequest = { confirmSignOut = false }, title = { Text("Sign out?") },
         text = { Text("You'll need to verify your phone again to sign back in.") },
         confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignInOrOut() }) { Text("Sign out") } },
         dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } }, containerColor = CardWhite)
-    if (showHelp) AlertDialog(onDismissRequest = { showHelp = false }, title = { Text("Need a hand?") },
-        text = { Text("The sample store is for browsing only. For phone sign-in, your app administrator must configure Supabase Auth and SMS delivery. Support contact details haven't been configured.") },
-        confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Got it") } }, containerColor = CardWhite)
+    info?.let { message -> AlertDialog(onDismissRequest = { info = null }, title = { Text("Account") },
+        text = { Text(message) }, confirmButton = { TextButton(onClick = { info = null }) { Text("Got it") } }, containerColor = CardWhite) }
+
 }
 
 @Composable

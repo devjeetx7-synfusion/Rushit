@@ -95,7 +95,7 @@ fun OrderJourneyScreen(
             else -> {
                 val scene = state.scene ?: JourneyScene.PACKING
                 // Decided once per order: persisting "celebrated" right away must not restart the scene.
-                val announceCelebration = remember(order.id) { state.showCelebration }
+                val announceCelebration = remember(order.id, scene == JourneyScene.DELIVERED) { state.showCelebration }
                 // Persist "celebrated" as soon as the delivered scene is actually shown.
                 LaunchedEffect(scene, order.id, announceCelebration) {
                     if (scene == JourneyScene.DELIVERED && announceCelebration) onCelebrationShown()
@@ -149,7 +149,7 @@ fun OrderJourneyScreen(
 
                     if (order.status != OrderStatus.CANCELLED && order.status != OrderStatus.FAILED) {
                         Column(Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
-                            DeliveryTimeline(activeStageIndex = stageIndex(order.status).coerceAtLeast(0))
+                            DeliveryTimeline(activeStageIndex = if (order.status == OrderStatus.PENDING) -1 else stageIndex(order.status))
                         }
                     }
 
@@ -158,10 +158,10 @@ fun OrderJourneyScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (order.isDemo && !order.status.isTerminal) {
-                            RushButton("Preview next stage", onAdvance, modifier = Modifier.weight(1f), arrow = false)
+                            RushButton("Preview next stage", onAdvance, modifier = Modifier.weight(1f), arrow = false, enabled = !state.transitioning)
                         }
-                        if (canCancel(order)) {
-                            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                        if (order.isDemo && canCancel(order)) {
+                            TextButton(onClick = onCancel, modifier = Modifier.weight(1f), enabled = !state.transitioning) {
                                 Text("Cancel order", color = Muted, style = MaterialTheme.typography.labelMedium)
                             }
                         }

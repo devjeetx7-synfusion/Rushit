@@ -23,13 +23,19 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -37,8 +43,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.rushit.app.BuildConfig
-import com.rushit.app.ui.studio.HomeStudioScreen
 import com.rushit.app.data.model.ShoppingMode
 import com.rushit.app.data.order.OrderDraft
 import com.rushit.app.domain.categoriesForMode
@@ -52,6 +56,8 @@ import com.rushit.app.ui.screens.home.HomeScreen
 import com.rushit.app.ui.screens.login.LoginScreen
 import com.rushit.app.ui.screens.login.OtpScreen
 import com.rushit.app.ui.screens.splash.SplashScreen
+import com.rushit.app.ui.screens.store.HelpScreen
+import com.rushit.app.ui.screens.store.NotificationsScreen
 import com.rushit.app.ui.screens.store.AccountScreen
 import com.rushit.app.ui.screens.store.AddressScreen
 import com.rushit.app.ui.screens.store.CheckoutScreen
@@ -65,6 +71,7 @@ import com.rushit.app.ui.screens.store.SearchScreen
 import com.rushit.app.ui.screens.order.OrderDetailsScreen
 import com.rushit.app.ui.screens.order.OrderJourneyScreen
 import com.rushit.app.ui.theme.Cream
+import com.rushit.app.ui.sound.OrderSound
 import com.rushit.app.ui.theme.LocalReducedMotion
 import com.rushit.app.ui.theme.rememberReducedMotion
 import com.rushit.app.ui.viewmodel.AuthEvent
@@ -72,6 +79,8 @@ import com.rushit.app.ui.viewmodel.AuthViewModel
 import com.rushit.app.ui.viewmodel.OrderViewModel
 import com.rushit.app.ui.viewmodel.ShopViewModel
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) {
@@ -79,6 +88,8 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     val shopState by shop.state.collectAsState()
     val orderState by orders.state.collectAsState()
     val nav = rememberNavController()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var needsStartupRoute by remember(auth) { mutableStateOf(!auth.startupRouteHandled) }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
@@ -95,6 +106,8 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     val placedOrderId = orderState.order?.id?.takeIf { orderState.justPlaced }
     LaunchedEffect(placedOrderId) {
         val id = placedOrderId ?: return@LaunchedEffect
+        if (!orders.consumePlacement(id)) return@LaunchedEffect
+        scope.launch(Dispatchers.IO) { OrderSound.playConfirmation(context.applicationContext) }
         shop.clearCart()
         orders.refreshOrders()
         nav.navigate("journey/${Uri.encode(id)}") {
@@ -190,6 +203,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             onAdd = { shop.changeQuantity(it, 1) },
                             onWishlist = shop::toggleWishlist,
                             onRetry = shop::loadCatalog,
+                            onNotifications = { nav.navigate("notifications") { launchSingleTop = true } },
                         )
                     }
                     composable("categories") {
@@ -201,30 +215,23 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         )
                     }
                     composable("orders") {
+                        LaunchedEffect(Unit) { orders.refreshOrders() }
                         if (!needsStartupRoute) OrdersScreen(
                             state = orderState,
                             onHome = { selectMain("home") },
                             onOpenOrder = { id -> nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true } },
                             onTracking = { nav.navigate("tracking") { launchSingleTop = true } },
+                            onRetry = orders::refreshOrders,
                         )
                     }
                     composable("account") {
                         if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
                             onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn,
-                            onSettings = if (BuildConfig.DEBUG) ({ nav.navigate("settings") { launchSingleTop = true } }) else null)
+                            onHelp = { nav.navigate("help") { launchSingleTop = true } },
+                            onNotifications = { nav.navigate("notifications") { launchSingleTop = true } })
                     }
-                    if (BuildConfig.DEBUG) {
-                        composable("settings") {
-                            Column(Modifier.fillMaxSize().background(Cream).padding(16.dp)) {
-                                androidx.compose.material3.TextButton(onClick = { nav.popBackStack() }) { androidx.compose.material3.Text("‹ Account") }
-                                androidx.compose.material3.Text("Settings", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-                                androidx.compose.material3.TextButton(onClick = { nav.navigate("home_studio") { launchSingleTop = true } }) {
-                                    androidx.compose.material3.Text("Home UI Studio  ›")
-                                }
-                            }
-                        }
-                        composable("home_studio") { HomeStudioScreen(onBack = { nav.popBackStack() }) }
-                    }
+                    composable("help") { HelpScreen(onBack = { nav.popBackStack() }) }
+                    composable("notifications") { NotificationsScreen(onBack = { nav.popBackStack() }) }
                     composable("search") {
                         if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,
                             onSubmit = shop::recordSearch, onRecent = { shop.updateSearch(it); shop.recordSearch() }, onClearRecent = shop::clearRecentSearches,
@@ -300,8 +307,17 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             LaunchedEffect(backStackEntry) {
                                 backStackEntry.arguments?.getString("id")?.let(orders::open)
                             }
+                            val lifecycle = LocalLifecycleOwner.current.lifecycle
+                            DisposableEffect(backStackEntry, lifecycle) {
+                                val observer = LifecycleEventObserver { _, event ->
+                                    if (event == Lifecycle.Event.ON_STOP) orders.setDemoAutoPlay(false)
+                                }
+                                lifecycle.addObserver(observer)
+                                onDispose { lifecycle.removeObserver(observer); orders.setDemoAutoPlay(false) }
+                            }
+                            val requestedId = backStackEntry.arguments?.getString("id")
                             OrderJourneyScreen(
-                                state = orderState,
+                                state = if (orderState.order?.id != requestedId && orderState.order != null) orderState.copy(order = null, loading = true) else orderState,
                                 onBack = { nav.popBackStack() },
                                 onAdvance = orders::advanceDemo,
                                 onAssignRider = orders::assignDemoRider,
@@ -326,11 +342,12 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             LaunchedEffect(backStackEntry) {
                                 backStackEntry.arguments?.getString("id")?.let(orders::open)
                             }
+                            val requestedId = backStackEntry.arguments?.getString("id")
                             OrderDetailsScreen(
-                                state = orderState,
+                                state = if (orderState.order?.id != requestedId && orderState.order != null) orderState.copy(order = null, loading = true) else orderState,
                                 onBack = { nav.popBackStack() },
                                 onTrack = { id -> nav.navigate("journey/${Uri.encode(id)}") { launchSingleTop = true } },
-                                onHelp = { nav.navigate("account") { launchSingleTop = true } },
+                                onHelp = { nav.navigate("help") { launchSingleTop = true } },
                             )
                         }
                     }
@@ -339,6 +356,9 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             LaunchedEffect(Unit) { orders.refreshOrders() }
                             TrackingScreen(
                                 orders = orderState.orders,
+                                loading = orderState.ordersLoading,
+                                error = orderState.ordersError,
+                                onRetry = orders::refreshOrders,
                                 onBack = { nav.popBackStack() },
                                 onOpenOrder = { id -> nav.navigate("journey/${Uri.encode(id)}") { launchSingleTop = true } },
                                 onShop = { selectMain("home") },

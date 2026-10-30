@@ -59,9 +59,12 @@ class LocalOrderRepository internal constructor(
 
     constructor(context: Context) : this(PreferencesOrderStore(context))
 
+    private val lock = Any()
+
     override suspend fun placeOrder(draft: OrderDraft): Result<Order> = withContext(Dispatchers.IO) {
-        runCatching {
+        synchronized(lock) { runCatching {
             require(draft.items.isNotEmpty()) { "An order needs at least one item." }
+            require(!draft.addressSummary.isNullOrBlank()) { "Add a delivery address before placing a demo order." }
             val timestamp = now()
             val items = draft.items.filter { it.quantity > 0 }
             val subtotal = orderSubtotal(items)
@@ -84,37 +87,38 @@ class LocalOrderRepository internal constructor(
             val all = readAll()
             writeAll(listOf(order) + all)
             order
-        }
+        } }
     }
 
-    override suspend fun orders(): List<Order> = withContext(Dispatchers.IO) { readAll() }
+    override suspend fun orders(): List<Order> = withContext(Dispatchers.IO) { synchronized(lock) { readAll() } }
 
-    override suspend fun order(id: String): Order? = withContext(Dispatchers.IO) { readAll().firstOrNull { it.id == id } }
+    override suspend fun order(id: String): Order? = withContext(Dispatchers.IO) { synchronized(lock) { readAll().firstOrNull { it.id == id } } }
 
     override suspend fun updateStatus(id: String, next: OrderStatus): Result<Order> = withContext(Dispatchers.IO) {
-        runCatching {
+        synchronized(lock) { runCatching {
             val all = readAll()
             val index = all.indexOfFirst { it.id == id }
             require(index >= 0) { "Order $id was not found." }
             val current = all[index]
+            require(current.isDemo) { "Only demo orders can be updated locally." }
             require(current.status.canTransitionTo(next)) {
                 "Cannot move order $id from ${current.status.wireName} to ${next.wireName}."
             }
             val updated = current.copy(status = next, updatedAt = now())
             writeAll(all.toMutableList().apply { set(index, updated) })
             updated
-        }
+        } }
     }
 
     override suspend fun markCelebrated(id: String, timestamp: String): Result<Order> = withContext(Dispatchers.IO) {
-        runCatching {
+        synchronized(lock) { runCatching {
             val all = readAll()
             val index = all.indexOfFirst { it.id == id }
             require(index >= 0) { "Order $id was not found." }
             val updated = all[index].copy(celebratedAt = all[index].celebratedAt ?: timestamp)
             writeAll(all.toMutableList().apply { set(index, updated) })
             updated
-        }
+        } }
     }
 
     private fun readAll(): List<Order> {
@@ -127,7 +131,7 @@ class LocalOrderRepository internal constructor(
                     decode(item)?.let(::add)
                 }
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse { throw IllegalStateException("Stored orders could not be read.", it) }
     }
 
     private fun writeAll(orders: List<Order>) {

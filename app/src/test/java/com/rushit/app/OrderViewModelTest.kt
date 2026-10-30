@@ -236,4 +236,40 @@ class OrderViewModelTest {
         assertFalse(vm.state.value.demoAutoPlay)
         assertTrue(repo.transitions.isEmpty())
     }
+    @Test fun `placement side effects are consumed only once after success`() = runTest {
+        val repo = FakeOrderRepository()
+        val vm = OrderViewModel(repo)
+        assertFalse(vm.consumePlacement("missing"))
+        vm.placeOrder(draft())
+        advanceUntilIdle()
+        val id = vm.state.value.order!!.id
+        assertFalse(vm.consumePlacement("another-order"))
+        assertTrue(vm.consumePlacement(id))
+        assertFalse(vm.consumePlacement(id))
+    }
+
+    @Test fun `ready for pickup starts without a demo rider`() = runTest {
+        val vm = OrderViewModel(FakeOrderRepository())
+        vm.placeOrder(draft())
+        advanceUntilIdle()
+        repeat(2) { vm.advanceDemo(); advanceUntilIdle() }
+        assertEquals(OrderStatus.READY_FOR_PICKUP, vm.state.value.order?.status)
+        assertEquals(JourneyScene.FINDING_RIDER, vm.state.value.scene)
+        vm.assignDemoRider()
+        assertEquals(JourneyScene.RIDER_READY, vm.state.value.scene)
+    }
+
+    @Test fun `real orders cannot be cancelled through demo controls`() = runTest {
+        val repo = FakeOrderRepository()
+        repo.stored["REAL"] = Order(id = "REAL", status = OrderStatus.CONFIRMED, items = emptyList(),
+            subtotalPaise = 0, totalPaise = 0, createdAt = "2026-10-29T10:15:00+0530", isDemo = false)
+        val vm = OrderViewModel(repo)
+        vm.open("REAL")
+        advanceUntilIdle()
+        vm.cancelOrder()
+        advanceUntilIdle()
+        assertTrue(repo.transitions.isEmpty())
+        assertEquals(OrderStatus.CONFIRMED, vm.state.value.order?.status)
+    }
+
 }

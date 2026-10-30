@@ -60,11 +60,17 @@ fun OrderDetailsScreen(
     val order = state.order
     Column(Modifier.fillMaxSize().background(Cream)) {
         ScreenHeader("Order details", onBack)
+        if (state.loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(color = Coral)
+            }
+            return@Column
+        }
         if (order == null) {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
                 MessageCard(
                     title = "Order unavailable",
-                    message = state.error ?: "This order could not be loaded.",
+                    message = state.transitionError ?: state.error ?: "This order could not be loaded.",
                     icon = R.drawable.ic_package_01,
                 )
             }
@@ -78,7 +84,7 @@ fun OrderDetailsScreen(
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("Delivery progress", style = MaterialTheme.typography.titleMedium, color = Ink)
                         Spacer(Modifier.height(14.dp))
-                        DeliveryTimeline(activeStageIndex = stageIndex(order.status).coerceAtLeast(0))
+                        DeliveryTimeline(activeStageIndex = if (order.status == OrderStatus.PENDING) -1 else stageIndex(order.status))
                     }
                 }
                 Spacer(Modifier.height(12.dp))
