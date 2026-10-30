@@ -280,10 +280,10 @@ fun FindingRiderScene() {
 fun RiderReadyScene(order: Order) {
     Column(Modifier.fillMaxWidth()) {
         Image(
-            painter = painterResource(R.drawable.order_rider_ready),
-            contentDescription = "Illustration of a delivery rider on a coral scooter",
+            painter = painterResource(R.drawable.order_rider_scooter),
+            contentDescription = "RushIt rider waiting on the branded red scooter",
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().aspectRatio(781f / 602f).clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth().aspectRatio(390f / 325f),
         )
         Spacer(Modifier.height(16.dp))
         SceneTitle(
