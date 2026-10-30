@@ -101,7 +101,7 @@ fun ThemeScreen(
     }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 28.dp),
     ) {
@@ -251,7 +251,7 @@ fun MoreScreen(onOpen: (String) -> Unit, currentRole: String) {
     val permissions = LocalAdminPermissions.current
     val destinations = remember(permissions) { moreDestinations() }
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -298,7 +298,7 @@ fun DesignerScreen(
     androidx.activity.compose.BackHandler(enabled = dirty) { onLeave() }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -436,7 +436,7 @@ fun SectionEditorScreen(section: String, onSave: (String) -> Unit, onCancel: () 
     val usesCollectionLayout = type in setOf("Featured products", "Product grid", "Categories")
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -543,7 +543,7 @@ fun PreviewScreen(
     }
 
     LazyColumn(
-        Modifier.fillMaxSize().then(previewBackground).padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().then(previewBackground).adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -82,8 +82,9 @@ fun ProductForm(
     androidx.activity.compose.BackHandler(enabled = hasChanges) { confirmDiscard = true }
     val brand = LocalAdminThemeConfig.current.activePrimary
 
+    val window = LocalAdminWindow.current
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().padding(horizontal = window.pagePadding),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -92,7 +93,7 @@ fun ProductForm(
             AdminSurfaceCard {
                 Text("Product image", fontWeight = FontWeight.Bold)
                 Box(
-                    Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp).clip(RoundedCornerShape(15.dp)).background(AdminColorScheme.primarySoft),
+                    Modifier.fillMaxWidth().height(if (window.isWide) 168.dp else 120.dp).padding(top = 8.dp).clip(RoundedCornerShape(15.dp)).background(AdminColorScheme.primarySoft),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -105,9 +106,20 @@ fun ProductForm(
         }
         item { AdminField("Product name", name, { name = it }) }
         item { AdminField("Description", description, { description = it }, singleLine = false) }
-        item { AdminField("SKU · optional", sku, { sku = it.trim().take(40) }) }
-        item { AdminField("Price (₹)", price, { price = it }, KeyboardType.Decimal) }
-        item { AdminField("Sale price (₹) · optional", salePrice, { salePrice = it }, KeyboardType.Decimal) }
+        item {
+            AdaptiveFormRow(
+                columns = window.formColumns,
+                first = { AdminField("SKU · optional", sku, { sku = it.trim().take(40) }) },
+                second = { AdminField("Price (₹)", price, { price = it }, KeyboardType.Decimal) },
+            )
+        }
+        item {
+            AdaptiveFormRow(
+                columns = window.formColumns,
+                first = { AdminField("Sale price (₹) · optional", salePrice, { salePrice = it }, KeyboardType.Decimal) },
+                second = { AdminField("Stock quantity", stock, { stock = it }, KeyboardType.Number) },
+            )
+        }
         item {
             AdminSurfaceCard {
                 Text("Unit", fontWeight = FontWeight.SemiBold)
@@ -126,7 +138,7 @@ fun ProductForm(
                 }
             }
         }
-        item { AdminField("Stock quantity", stock, { stock = it }, KeyboardType.Number) }
+
         item { AdminSurfaceCard { ToggleRow("Visible in demo catalog", visible) { visible = it } } }
         item { if (error.isNotBlank()) Text(error, color = AdminColorScheme.error, fontSize = 13.sp) }
         item {
@@ -179,7 +191,7 @@ fun CustomersScreen(onOpen: (Int) -> Unit, notes: Map<String, String>, onOpenRol
     val filtered by remember(search) {
         derivedStateOf { demoCustomers.withIndex().filter { it.value.contains(search, true) } }
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().adminPageInsets()) {
         ScreenHeader("Customers", "${demoCustomers.size} demo customers")
         if (!permissions.canManageCustomers) {
             RoleAccessBanner(permissions.roleName, "Manage Customers", onOpenRoles)
@@ -211,7 +223,7 @@ fun CustomerDetailScreen(
     val record = demoCustomers.getOrNull(index) ?: demoCustomers.first()
     var draft by rememberSaveable(index, note) { mutableStateOf(note) }
     val permissions = LocalAdminPermissions.current
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize().adminPageInsets(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { ScreenHeader(record.substringBefore(" · "), "Customer profile · local demo") }
         item { DemoNotice() }
         item {
@@ -284,7 +296,7 @@ fun NotificationScreen(
         else -> demoCustomers.size
     }
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -378,7 +390,7 @@ fun SettingsScreen(
     var confirmReset by remember { mutableStateOf(false) }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
@@ -388,8 +400,10 @@ fun SettingsScreen(
         item {
             AdminSurfaceCard {
                 Text("Store identity · local demo", fontWeight = FontWeight.Bold)
-                AdminField("Store name", storeName, { if (canManage) storeName = it.take(50) })
-                AdminField("Support email", supportEmail, { if (canManage) supportEmail = it.trim().take(80) }, KeyboardType.Email)
+                AdaptiveFormRow(
+                    first = { AdminField("Store name", storeName, { if (canManage) storeName = it.take(50) }) },
+                    second = { AdminField("Support email", supportEmail, { if (canManage) supportEmail = it.trim().take(80) }, KeyboardType.Email) },
+                )
                 Text("Currency · Indian Rupee (₹) · fixed for this local India demo", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
                 Text("Current preview palette · $themeName", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
             }
@@ -467,7 +481,7 @@ fun ProfileScreen(
     val brand = LocalAdminThemeConfig.current.activePrimary
     val initials = name.split(' ').mapNotNull { it.firstOrNull() }.take(2).joinToString("")
 
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize().adminPageInsets(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { ScreenHeader("Admin Profile", "Demo account · local only") }
         item {
             AdminSurfaceCard {
@@ -546,8 +560,10 @@ fun ProfileScreen(
             },
             onDismiss = { edit = false; profileError = "" },
         ) {
-            AdminField("Display name", draftName, { draftName = it })
-            AdminField("Demo email", draftEmail, { draftEmail = it }, KeyboardType.Email)
+            AdaptiveFormRow(
+                first = { AdminField("Display name", draftName, { draftName = it }) },
+                second = { AdminField("Demo email", draftEmail, { draftEmail = it }, KeyboardType.Email) },
+            )
             if (profileError.isNotBlank()) Text(profileError, color = AdminColorScheme.error, fontSize = 12.sp)
         }
     }

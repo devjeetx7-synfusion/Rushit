@@ -101,7 +101,7 @@ fun OfferManagerScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 18.dp),
+            .adminPageInsets(),
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -371,7 +371,7 @@ fun OfferEditorScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 18.dp),
+            .adminPageInsets(),
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -443,15 +443,21 @@ fun OfferEditorScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                AdminField(
-                    label = "Offer name (e.g. Welcome Offer)",
-                    value = name,
-                    onValue = { name = it.take(50) },
-                )
-                AdminField(
-                    label = "Coupon code (A–Z, 0–9)",
-                    value = code,
-                    onValue = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(16) },
+                AdaptiveFormRow(
+                    first = {
+                        AdminField(
+                            label = "Offer name (e.g. Welcome Offer)",
+                            value = name,
+                            onValue = { name = it.take(50) },
+                        )
+                    },
+                    second = {
+                        AdminField(
+                            label = "Coupon code (A–Z, 0–9)",
+                            value = code,
+                            onValue = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(16) },
+                        )
+                    },
                 )
             }
         }

@@ -409,18 +409,20 @@ fun SalesAnalyticsCard(
                 listOf(niceMax, (niceMax * 2) / 3, niceMax / 3, 0)
             }
 
+            val compactChart = LocalAdminWindow.current.isCompactHeight
+            val plotHeight = if (compactChart) 104.dp else 148.dp
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(175.dp),
+                    .height(if (compactChart) 128.dp else 175.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Y-Axis Labels Column
                 Column(
                     modifier = Modifier
                         .width(44.dp)
-                        .height(148.dp),
+                        .height(plotHeight),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.End,
                 ) {
@@ -445,7 +447,7 @@ fun SalesAnalyticsCard(
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(148.dp)
+                            .height(plotHeight)
                             .semantics { contentDescription = chartDescription }
                             .pointerInput(activePoints) {
                                 detectTapGestures { offset ->
