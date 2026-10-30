@@ -186,7 +186,7 @@ fun CustomersScreen(onOpen: (Int) -> Unit, notes: Map<String, String>, onOpenRol
             Spacer(Modifier.height(8.dp))
         }
         AdminSearchField(search, { search = it }, "Search customers…")
-        LazyColumn(contentPadding = PaddingValues(vertical = 10.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(contentPadding = PaddingValues(top = 10.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (filtered.isEmpty()) item { EmptyState("No customers found", "Try another name or city.") }
             items(filtered, key = { it.index }) { indexed ->
                 val hasNote = notes[indexed.index.toString()].orEmpty().isNotBlank()
