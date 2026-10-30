@@ -532,7 +532,12 @@ private val initialOrders = listOf("#RI172805456  ·  Ankit Kumar  ·  ₹542  �
 @Composable private fun PreviewScreen(sections: List<String>, themeName: String, backgroundStyle: String, sectionRadius: Float, onBack: () -> Unit, onPublish: () -> Unit) {
     val visibleSections = sections.filter { it.endsWith("|Visible") }
     val previewColor = when (themeName) { "Sunrise" -> Amber; "Forest" -> Green; "Ocean" -> Color(0xFF4975C6); else -> Coral }
-    LazyColumn(Modifier.fillMaxSize().background(if (backgroundStyle == "Gradient") Brush.verticalGradient(listOf(Color(0xFFFFEEE9), Cream)) else Cream).padding(horizontal = 18.dp), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val previewBackground = if (backgroundStyle == "Gradient") {
+        Modifier.background(Brush.verticalGradient(listOf(Color(0xFFFFEEE9), Cream)))
+    } else {
+        Modifier.background(Cream)
+    }
+    LazyColumn(Modifier.fillMaxSize().then(previewBackground).padding(horizontal = 18.dp), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { ScreenHeader("Home Preview", "Local preview · not published to the User app") }
         item { DemoNotice() }
         item { AdminCard {
@@ -644,9 +649,11 @@ private val initialOrders = listOf("#RI172805456  ·  Ankit Kumar  ·  ₹542  �
                 else -> ""
             }
             if (error.isBlank()) {
-                val availability = if (count == 0) "Out of stock" else if (count < 5) "Low stock" else "In stock"
+                val validCount = count ?: return@Button
+                val validPrice = parsedPrice ?: return@Button
+                val availability = if (validCount == 0) "Out of stock" else if (validCount < 5) "Low stock" else "In stock"
                 saved = true
-                onSave("${name.trim()} · ₹${parsedPrice!!.toInt()}/$unit · $availability · $category · ${if (visible) "Visible" else "Hidden"}")
+                onSave("${name.trim()} · ₹${validPrice.toInt()}/$unit · $availability · $category · ${if (visible) "Visible" else "Hidden"}")
             }
         }, enabled = !saved, modifier = Modifier.fillMaxWidth(), shape = AppShapes.button, colors = ButtonDefaults.buttonColors(containerColor = Coral)) { Text(if (product == null) "Save Product" else "Save Changes") } }
     }
@@ -866,7 +873,7 @@ private val demoCustomers = listOf("Ankit Kumar · Patna · 5 orders", "Priya Si
 @Composable private fun PreviewProductCard(label: String, modifier: Modifier = Modifier) {
     Column(modifier.background(Color.White, RoundedCornerShape(12.dp)).padding(10.dp)) {
         Text(label.take(2), fontSize = 23.sp)
-        Text(label.substringAfter('\\n'), color = Muted, fontSize = 11.sp)
+        Text(label.substringAfter('\n'), color = Muted, fontSize = 11.sp)
     }
 }
 @Composable private fun DataRow(glyph: String, title: String, detail: String, onClick: () -> Unit = {}) { Surface(Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = Card, border = androidx.compose.foundation.BorderStroke(1.dp, Line)) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFEEE9)), contentAlignment = Alignment.Center) { Text(glyph, color = Coral, fontWeight = FontWeight.Bold) }; Spacer(Modifier.width(11.dp)); Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(detail, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Text("›", color = Muted, fontSize = 22.sp) } } }
