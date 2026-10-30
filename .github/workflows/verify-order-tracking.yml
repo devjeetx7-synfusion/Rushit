@@ -43,12 +43,12 @@ jobs:
               root = ET.parse(path).getroot()
               for key in totals:
                   totals[key] += int(root.get(key, 0))
-          print('Unit tests:', totals)
+          print('::notice title=Unit tests::' + str(totals))
           report = 'app/build/reports/lint-results-debug.xml'
           try:
               issues = list(ET.parse(report).getroot().iter('issue'))
-              print('Lint errors:', sum(i.get('severity') == 'Error' for i in issues))
-              print('Lint warnings:', sum(i.get('severity') == 'Warning' for i in issues))
+              print('::notice title=Lint errors::' + str(sum(i.get('severity') == 'Error' for i in issues)))
+              print('::notice title=Lint warnings::' + str(sum(i.get('severity') == 'Warning' for i in issues)))
           except FileNotFoundError:
               print('No lint report produced')
           PY

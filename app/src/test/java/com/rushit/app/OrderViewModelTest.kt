@@ -103,7 +103,7 @@ class OrderViewModelTest {
         assertEquals(1, repo.placeCalls)
         assertTrue(vm.state.value.justPlaced)
         assertEquals(OrderStatus.CONFIRMED, vm.state.value.order?.status)
-        assertEquals(JourneyScene.PACKING, vm.state.value.scene)
+        assertEquals(JourneyScene.CONFIRMED, vm.state.value.scene)
 
         vm.clearConfirmationFlag()
         assertFalse(vm.state.value.justPlaced)
@@ -248,14 +248,12 @@ class OrderViewModelTest {
         assertFalse(vm.consumePlacement(id))
     }
 
-    @Test fun `ready for pickup starts without a demo rider`() = runTest {
+    @Test fun `demo ready for pickup shows the illustrated rider`() = runTest {
         val vm = OrderViewModel(FakeOrderRepository())
         vm.placeOrder(draft())
         advanceUntilIdle()
         repeat(2) { vm.advanceDemo(); advanceUntilIdle() }
         assertEquals(OrderStatus.READY_FOR_PICKUP, vm.state.value.order?.status)
-        assertEquals(JourneyScene.FINDING_RIDER, vm.state.value.scene)
-        vm.assignDemoRider()
         assertEquals(JourneyScene.RIDER_READY, vm.state.value.scene)
     }
 

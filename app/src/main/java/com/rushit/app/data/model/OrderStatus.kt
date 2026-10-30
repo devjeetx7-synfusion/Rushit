@@ -13,7 +13,7 @@ enum class OrderStatus(val wireName: String, val label: String) {
     READY_FOR_PICKUP("ready_for_pickup", "Ready for pickup"),
     PICKED_UP("picked_up", "Picked up"),
     OUT_FOR_DELIVERY("out_for_delivery", "On the way"),
-    ARRIVING("arriving", "Arriving"),
+    ARRIVING("arriving", "Almost there"),
     DELIVERED("delivered", "Delivered"),
     CANCELLED("cancelled", "Cancelled"),
     FAILED("failed", "Failed"),

@@ -320,16 +320,13 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                                 state = if (orderState.order?.id != requestedId && orderState.order != null) orderState.copy(order = null, loading = true) else orderState,
                                 onBack = { nav.popBackStack() },
                                 onAdvance = orders::advanceDemo,
-                                onAssignRider = orders::assignDemoRider,
                                 onCancel = orders::cancelOrder,
-                                onToggleAutoPlay = orders::setDemoAutoPlay,
                                 onViewOrder = {
                                     val id = orderState.order?.id
                                     if (id != null) nav.navigate("order/${Uri.encode(id)}") { launchSingleTop = true }
                                 },
                                 onContinueShopping = { selectMain("home") },
                                 onCelebrationShown = orders::onCelebrationShown,
-                                onConfirmationDismissed = orders::clearConfirmationFlag,
                                 onRetry = {
                                     val id = backStackEntry.arguments?.getString("id")
                                     if (id != null) orders.open(id)

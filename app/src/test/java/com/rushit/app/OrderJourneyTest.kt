@@ -61,17 +61,17 @@ class OrderJourneyTest {
     @Test fun `timeline stage follows the order status`() {
         assertEquals(DeliveryStage.CONFIRMED, stageFor(OrderStatus.CONFIRMED))
         assertEquals(DeliveryStage.PREPARING, stageFor(OrderStatus.READY_FOR_PICKUP))
-        assertEquals(DeliveryStage.ON_THE_WAY, stageFor(OrderStatus.ARRIVING))
+        assertEquals(DeliveryStage.ALMOST_THERE, stageFor(OrderStatus.ARRIVING))
         assertEquals(DeliveryStage.DELIVERED, stageFor(OrderStatus.DELIVERED))
         assertNull(stageFor(OrderStatus.CANCELLED))
         assertNull(stageFor(OrderStatus.FAILED))
         assertEquals(-1, stageIndex(OrderStatus.CANCELLED))
-        assertEquals(3, stageIndex(OrderStatus.DELIVERED))
+        assertEquals(4, stageIndex(OrderStatus.DELIVERED))
     }
 
     @Test fun `scenes match status and rider assignment`() {
         assertEquals(JourneyScene.AWAITING_CONFIRMATION, sceneFor(OrderStatus.PENDING, false))
-        assertEquals(JourneyScene.PACKING, sceneFor(OrderStatus.CONFIRMED, false))
+        assertEquals(JourneyScene.CONFIRMED, sceneFor(OrderStatus.CONFIRMED, false))
         assertEquals(JourneyScene.PACKING, sceneFor(OrderStatus.PREPARING, true))
         assertEquals(JourneyScene.FINDING_RIDER, sceneFor(OrderStatus.READY_FOR_PICKUP, false))
         assertEquals(JourneyScene.RIDER_READY, sceneFor(OrderStatus.READY_FOR_PICKUP, true))

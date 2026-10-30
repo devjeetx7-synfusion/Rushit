@@ -22,20 +22,23 @@ object DeliveryPricing {
         (itemsPaise + deliveryFee(itemsPaise) + platformFee() - discountPaise).coerceAtLeast(0)
 }
 
-/** The four customer-facing stages of the storyboard timeline. */
+/** The five customer-facing stages of the storyboard timeline. */
 enum class DeliveryStage(val label: String) {
     CONFIRMED("Confirmed"),
     PREPARING("Preparing"),
     ON_THE_WAY("On the way"),
+    ALMOST_THERE("Almost there"),
     DELIVERED("Delivered"),
 }
 
 /** Which scene the journey screen renders. Purely derived from [OrderStatus]; never persisted. */
 enum class JourneyScene {
     AWAITING_CONFIRMATION,
+    CONFIRMED,
     PACKING,
     FINDING_RIDER,
     RIDER_READY,
+    PICKED_UP,
     ON_THE_WAY,
     ALMOST_THERE,
     DELIVERED,
@@ -50,12 +53,13 @@ enum class JourneyScene {
 fun stageFor(status: OrderStatus): DeliveryStage? = when (status) {
     OrderStatus.PENDING, OrderStatus.CONFIRMED -> DeliveryStage.CONFIRMED
     OrderStatus.PREPARING, OrderStatus.READY_FOR_PICKUP -> DeliveryStage.PREPARING
-    OrderStatus.PICKED_UP, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.ARRIVING -> DeliveryStage.ON_THE_WAY
+    OrderStatus.PICKED_UP, OrderStatus.OUT_FOR_DELIVERY -> DeliveryStage.ON_THE_WAY
+    OrderStatus.ARRIVING -> DeliveryStage.ALMOST_THERE
     OrderStatus.DELIVERED -> DeliveryStage.DELIVERED
     OrderStatus.CANCELLED, OrderStatus.FAILED -> null
 }
 
-/** Index of the active stage (0..3), or -1 for cancelled/failed orders. */
+/** Index of the active stage (0..4), or -1 for cancelled/failed orders. */
 fun stageIndex(status: OrderStatus): Int = stageFor(status)?.ordinal ?: -1
 
 /**
@@ -64,9 +68,10 @@ fun stageIndex(status: OrderStatus): Int = stageFor(status)?.ordinal ?: -1
  */
 fun sceneFor(status: OrderStatus, riderAssigned: Boolean): JourneyScene = when (status) {
     OrderStatus.PENDING -> JourneyScene.AWAITING_CONFIRMATION
-    OrderStatus.CONFIRMED, OrderStatus.PREPARING -> JourneyScene.PACKING
+    OrderStatus.CONFIRMED -> JourneyScene.CONFIRMED
+    OrderStatus.PREPARING -> JourneyScene.PACKING
     OrderStatus.READY_FOR_PICKUP -> if (riderAssigned) JourneyScene.RIDER_READY else JourneyScene.FINDING_RIDER
-    OrderStatus.PICKED_UP -> JourneyScene.RIDER_READY
+    OrderStatus.PICKED_UP -> JourneyScene.PICKED_UP
     OrderStatus.OUT_FOR_DELIVERY -> JourneyScene.ON_THE_WAY
     OrderStatus.ARRIVING -> JourneyScene.ALMOST_THERE
     OrderStatus.DELIVERED -> JourneyScene.DELIVERED

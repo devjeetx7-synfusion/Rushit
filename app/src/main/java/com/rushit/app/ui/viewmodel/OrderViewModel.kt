@@ -206,7 +206,9 @@ class OrderViewModel internal constructor(
                         if (current.order?.id != orderId) return@update current
                         current.copy(
                             order = updated,
-                            riderAssigned = if (updated.status == OrderStatus.READY_FOR_PICKUP) false else current.riderAssigned,
+                            justPlaced = false,
+                            // The local demo has an illustrated rider; real orders still wait for assignment.
+                            riderAssigned = if (updated.isDemo && updated.status == OrderStatus.READY_FOR_PICKUP) true else current.riderAssigned,
                         )
                     }
                 },

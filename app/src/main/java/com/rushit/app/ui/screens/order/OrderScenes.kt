@@ -7,461 +7,392 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.rushit.app.R
 import com.rushit.app.data.model.Order
 import com.rushit.app.data.model.OrderStatus
 import com.rushit.app.data.model.ShoppingMode
-import com.rushit.app.domain.OrderTime
-import com.rushit.app.ui.components.CatalogImage
-import com.rushit.app.ui.components.CityBackdrop
-import com.rushit.app.ui.components.Confetti
-import com.rushit.app.ui.components.DeliveryRouteMap
-import com.rushit.app.ui.components.DeliveryScooter
-import com.rushit.app.ui.components.RushButton
+import com.rushit.app.domain.JourneyScene
+import com.rushit.app.domain.RiderGeometry
+import com.rushit.app.domain.TravelParallax
+import com.rushit.app.domain.travelSpeedFactor
+import com.rushit.app.domain.wheelDegrees
 import com.rushit.app.ui.components.RushIcon
-import com.rushit.app.ui.components.RushItBag
-import com.rushit.app.ui.components.StatusPill
 import com.rushit.app.ui.components.SuccessCheck
-import com.rushit.app.ui.theme.Amber
-import com.rushit.app.ui.theme.BannerPeach
-import com.rushit.app.ui.theme.Border
 import com.rushit.app.ui.theme.CardWhite
 import com.rushit.app.ui.theme.Coral
-import com.rushit.app.ui.theme.DeepRed
-import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.LocalReducedMotion
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.Success
+import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
 
-/** Illustrations used per shopping mode, so gift orders never look like grocery orders. */
-private fun productsForMode(mode: ShoppingMode): List<Int> = when (mode) {
-    ShoppingMode.GROCERY -> listOf(R.drawable.product_tomatoes, R.drawable.product_milk, R.drawable.product_bananas)
-    ShoppingMode.ECOMMERCE -> listOf(R.drawable.ecommerce_headphones, R.drawable.ecommerce_lamp)
-    ShoppingMode.GIFTS -> listOf(R.drawable.gift_bouquet, R.drawable.category_care)
+/** Hoisted so On the Way → Almost There keeps the same wheel/road phase. */
+class TravelMotionState {
+    val distance = Animatable(0f)
+    val speed = Animatable(1f)
 }
 
 @Composable
-private fun SceneTitle(title: String, subtitle: String, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, color = Ink, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(6.dp))
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center)
-    }
-}
-
-/**
- * Order confirmation: bag scales in, produce appears, the tick draws, a little confetti, then the
- * details. One-shot animations keyed on the order id so a recomposition never replays them.
- */
-@Composable
-fun OrderConfirmedScene(order: Order, onTrack: () -> Unit, onContinueShopping: () -> Unit) {
+fun rememberTravelMotion(orderId: String, active: Boolean, almostThere: Boolean): TravelMotionState {
     val reduced = LocalReducedMotion.current
-    val bagScale = remember(order.id) { Animatable(if (reduced) 1f else 0.72f) }
-    val tick = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
-    val contentAlpha = remember(order.id) { Animatable(1f) }
-    val confetti = remember(order.id) { Animatable(0f) }
-
-    LaunchedEffect(order.id, reduced) {
-        if (reduced) {
-            bagScale.snapTo(1f); tick.snapTo(1f); contentAlpha.snapTo(1f)
-            return@LaunchedEffect
-        }
-        bagScale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 260f))
-        tick.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
-        confetti.animateTo(1f, tween(1_100, easing = LinearEasing))
+    val motion = remember(orderId) { TravelMotionState() }
+    LaunchedEffect(orderId, almostThere, reduced) {
+        if (reduced) motion.speed.snapTo(1f)
+        else motion.speed.animateTo(travelSpeedFactor(almostThere), tween(1_200, easing = FastOutSlowInEasing))
     }
-
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth().height(230.dp), contentAlignment = Alignment.Center) {
-            Confetti(Modifier.fillMaxSize(), progress = confetti.value, seed = order.id.hashCode())
-            Box(
-                Modifier.size(168.dp).graphicsLayer {
-                    scaleX = bagScale.value
-                    scaleY = bagScale.value
-                    alpha = bagScale.value.coerceIn(0f, 1f)
-                },
-                contentAlignment = Alignment.Center,
-            ) { RushItBag(Modifier.fillMaxSize()) }
-            SuccessCheck(
-                modifier = Modifier.align(Alignment.TopCenter).size(64.dp),
-                progress = tick.value,
-                scale = if (reduced) 1f else (0.7f + 0.3f * tick.value),
-            )
-        }
-        Spacer(Modifier.height(10.dp))
-        Column(Modifier.graphicsLayer { alpha = contentAlpha.value }, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Order Confirmed!", style = MaterialTheme.typography.headlineLarge, color = Ink, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            Text("We're getting your order ready.", style = MaterialTheme.typography.bodyLarge, color = Muted, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(16.dp))
-            Surface(shape = RoundedCornerShape(16.dp), color = CardWhite, border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
-                Column(Modifier.padding(horizontal = 22.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Order #${order.id}", style = MaterialTheme.typography.titleMedium, color = Ink)
-                    Text(OrderTime.display(order.createdAt), style = MaterialTheme.typography.bodySmall, color = Muted)
+    LaunchedEffect(orderId, active, reduced) {
+        if (!active || reduced) return@LaunchedEffect
+        var last = 0L
+        while (isActive) {
+            withFrameNanos { now ->
+                if (last != 0L) {
+                    val dt = ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+                    motion.distance.snapTo((motion.distance.value + dt * 0.35f * motion.speed.value) % 1_000f)
                 }
+                last = now
             }
-            Spacer(Modifier.height(18.dp))
-            RushButton("Track order", onTrack, arrow = true)
-            if (order.isDemo) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Demo order · no payment was taken",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Muted,
-                    textAlign = TextAlign.Center,
+        }
+    }
+    return motion
+}
+
+@Composable
+fun OrderConfirmedScene(order: Order) {
+    val reduced = LocalReducedMotion.current
+    val enter = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
+    val tick = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(order.id, reduced) {
+        if (reduced) { enter.snapTo(1f); tick.snapTo(1f); return@LaunchedEffect }
+        enter.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+        tick.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
+    }
+    Column(Modifier.fillMaxWidth()) {
+        OrderSceneContainer {
+            BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer {
+                alpha = enter.value
+                val s = 0.94f + 0.06f * enter.value
+                scaleX = s; scaleY = s
+            }) {
+                val density = LocalDensity.current
+                val scale = with(density) { maxWidth.toPx() } / 344f
+                Image(painterResource(R.drawable.order_confirmation_bg), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                GroceryGroup(R.drawable.order_confirmation_groceries_left, 28f, 88f, scale, enter.value, 0f)
+                GroceryGroup(R.drawable.order_confirmation_groceries_right, 225f, 80f, scale, enter.value, 0.18f)
+                val checkSize = with(density) { (54f * scale).toDp() }
+                SuccessCheck(
+                    modifier = Modifier.offset(x = with(density) { (148f * scale).toDp() }, y = with(density) { (86f * scale).toDp() }).size(checkSize),
+                    progress = tick.value,
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            androidx.compose.material3.TextButton(onClick = onContinueShopping) {
-                Text("Continue shopping", color = DeepRed, style = MaterialTheme.typography.labelMedium)
-            }
         }
-    }
-}
-
-/** Grocery orders use the supplied static packing artwork; other modes retain their own art. */
-@Composable
-fun PackingScene(order: Order, status: OrderStatus) {
-    if (order.mode == ShoppingMode.GROCERY) {
-        Column(Modifier.fillMaxWidth()) {
-            Image(
-                painter = painterResource(R.drawable.order_packing),
-                contentDescription = "Groceries being packed in a paper bag on a conveyor",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(24.dp)),
-            )
-            Spacer(Modifier.height(18.dp))
-            SceneTitle(
-                if (status == OrderStatus.PENDING) "Waiting for confirmation" else "Packing your order…",
-                when (status) {
-                    OrderStatus.PENDING -> "This order is waiting for confirmation."
-                    OrderStatus.CONFIRMED -> "This order is confirmed and waiting to be packed."
-                    else -> "Your items are being packed."
-                },
-            )
-        }
-    } else {
-        OtherModePackingScene(order, status)
+        Spacer(Modifier.height(16.dp))
+        SceneTitle("Order confirmed!", "Your order has been received and the store will start preparing it.")
     }
 }
 
 @Composable
-private fun OtherModePackingScene(order: Order, status: OrderStatus) {
-    val reduced = LocalReducedMotion.current
-    val products = remember(order.mode) { productsForMode(order.mode) }
-    val transition = rememberInfiniteTransition(label = "packing")
-    val drift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2_400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "packing drift",
+private fun GroceryGroup(res: Int, x: Float, y: Float, scale: Float, progress: Float, delay: Float) {
+    val density = LocalDensity.current
+    val local = ((progress - delay) / (1f - delay)).coerceIn(0f, 1f)
+    val eased = FastOutSlowInEasing.transform(local)
+    val width = if (res == R.drawable.order_confirmation_groceries_left) 103f else 110f
+    val height = if (res == R.drawable.order_confirmation_groceries_left) 95f else 101f
+    Image(
+        painterResource(res), null,
+        Modifier.offset(x = with(density) { (x * scale).toDp() }, y = with(density) { ((y + 8f * (1f - eased)) * scale).toDp() })
+            .size(with(density) { (width * scale).toDp() }, with(density) { (height * scale).toDp() })
+            .graphicsLayer { alpha = eased },
     )
-    val settle = if (reduced) 1f else 0.96f + drift * 0.04f
+}
 
+@Composable
+fun PackingAnimationScene(order: Order, status: OrderStatus) {
+    if (order.mode != ShoppingMode.GROCERY) {
+        GenericPackingScene(status)
+        return
+    }
+    val reduced = LocalReducedMotion.current
+    val progress = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(order.id, reduced) {
+        if (reduced) progress.snapTo(1f) else progress.animateTo(1f, tween(1_800, easing = LinearEasing))
+    }
+    val idle = rememberInfiniteTransition(label = "bag idle")
+    val bob by idle.animateFloat(0f, 1f, infiniteRepeatable(tween(2_400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bag bob")
     Column(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(24.dp)).background(BannerPeach.copy(alpha = 0.55f)),
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                // back shelf
-                drawRoundRect(Color(0xFFF6E7D2), Offset(0f, size.height * 0.62f), Size(size.width, size.height * 0.38f), CornerRadius(size.height * 0.04f))
-                // conveyor belt
-                drawRoundRect(Color(0xFFB9C4C9), Offset(0f, size.height * 0.72f), Size(size.width, size.height * 0.10f), CornerRadius(size.height * 0.04f))
-                var x = 0f
-                while (x < size.width) {
-                    drawRoundRect(Color(0xFF97A5AB), Offset(x, size.height * 0.72f), Size(size.width * 0.02f, size.height * 0.10f))
-                    x += size.width * 0.06f
-                }
-                // gentle sparkle dots
-                repeat(6) { index ->
-                    drawCircle(Amber.copy(alpha = 0.35f), size.minDimension * 0.012f, Offset(size.width * (0.1f + index * 0.15f), size.height * 0.14f))
-                }
-            }
-            Box(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp).size(130.dp)
-                    .graphicsLayer { scaleX = settle; scaleY = settle },
-            ) { RushItBag(Modifier.fillMaxSize()) }
-            // products floating towards the bag
-            Box(Modifier.align(Alignment.TopCenter).padding(top = 16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    products.forEachIndexed { index, image ->
-                        val offset = if (reduced) 0f else (drift * (6f + index * 4f))
-                        Box(
-                            Modifier.size(54.dp).graphicsLayer { translationY = -offset }
-                                .clip(CircleShape).background(CardWhite.copy(alpha = 0.92f)),
-                            contentAlignment = Alignment.Center,
-                        ) { CatalogImage(null, image, null, Modifier.size(44.dp)) }
-                    }
-                }
+        OrderSceneContainer {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val scale = with(density) { maxWidth.toPx() } / 344f
+                Image(painterResource(R.drawable.order_packing), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                // Bag settles with a very small idle movement after the items arrive.
+                val bagY = 62f + if (reduced) 0f else (bob - 0.5f) * 2f
+                Image(
+                    painterResource(R.drawable.order_packing_bag), null,
+                    Modifier.offset(x = with(density) { (118f * scale).toDp() }, y = with(density) { (bagY * scale).toDp() })
+                        .size(with(density) { (137f * scale).toDp() }, with(density) { (122f * scale).toDp() }),
+                )
+                PackingItem(R.drawable.order_packing_item_tomato, 100f, 43f, 150f, 78f, scale, progress.value, 0f)
+                PackingItem(R.drawable.order_packing_item_milk, 180f, 42f, 175f, 74f, scale, progress.value, 0.16f)
+                PackingItem(R.drawable.order_packing_item_banana, 260f, 43f, 205f, 78f, scale, progress.value, 0.32f)
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
         SceneTitle(
             if (status == OrderStatus.PENDING) "Waiting for confirmation" else "Packing your order…",
-            if (status == OrderStatus.PENDING) "This order is waiting for confirmation." else if (status == OrderStatus.CONFIRMED) "This order is confirmed and waiting to be packed." else "Your items are being packed.",
+            if (status == OrderStatus.PENDING) "This order is waiting for confirmation." else "Your items are being carefully packed with love.",
         )
     }
 }
 
-/** Finding a rider: honest pending state, used only while no partner is assigned. */
 @Composable
-fun FindingRiderScene() {
-    val reduced = LocalReducedMotion.current
-    val transition = rememberInfiniteTransition(label = "finding rider")
-    val pulse by transition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "rider pulse",
+private fun PackingItem(res: Int, fromX: Float, fromY: Float, toX: Float, toY: Float, scale: Float, progress: Float, delay: Float) {
+    val density = LocalDensity.current
+    val local = ((progress - delay) / 0.55f).coerceIn(0f, 1f)
+    val eased = FastOutSlowInEasing.transform(local)
+    val x = fromX + (toX - fromX) * eased
+    val y = fromY + (toY - fromY) * eased
+    val alpha = if (local < 0.75f) 1f else 1f - (local - 0.75f) / 0.25f
+    val s = 1f - 0.35f * eased
+    Image(
+        painterResource(res), null,
+        Modifier.offset(x = with(density) { ((x - 27f) * scale).toDp() }, y = with(density) { ((y - 27f) * scale).toDp() })
+            .size(with(density) { (55f * scale).toDp() })
+            .graphicsLayer { scaleX = s; scaleY = s; this.alpha = alpha },
     )
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(24.dp)).background(Peach.copy(alpha = 0.6f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.size(120.dp).graphicsLayer { scaleX = if (reduced) 1f else pulse; scaleY = if (reduced) 1f else pulse }
-                    .clip(CircleShape).background(CardWhite),
-                contentAlignment = Alignment.Center,
-            ) {
-                RushIcon(R.drawable.ic_user_02, null, Modifier.size(52.dp), Coral)
+}
+
+@Composable
+private fun GenericPackingScene(status: OrderStatus) {
+    Column(Modifier.fillMaxWidth()) {
+        OrderSceneContainer {
+            Box(Modifier.fillMaxSize().background(Peach.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                RushIcon(R.drawable.ic_shopping_bag_01, null, Modifier.size(72.dp), Coral)
             }
         }
-        Spacer(Modifier.height(18.dp))
-        SceneTitle("Waiting for a rider", "No delivery partner has been assigned.")
-        Spacer(Modifier.height(10.dp))
-        StatusPill("No partner assigned yet", color = Amber)
+        Spacer(Modifier.height(16.dp))
+        SceneTitle("Packing your order…", if (status == OrderStatus.PENDING) "This order is waiting for confirmation." else "Your items are being carefully packed with love.")
     }
 }
 
-/** Rider ready / assigned: scooter idling in the city. */
+@Composable
+fun FindingRiderScene() {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        OrderSceneContainer {
+            Box(Modifier.fillMaxSize().background(Peach.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(96.dp).clip(CircleShape).background(CardWhite), contentAlignment = Alignment.Center) {
+                    RushIcon(R.drawable.ic_user_02, null, Modifier.size(48.dp), Coral)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        SceneTitle("Waiting for a rider", "No delivery partner has been assigned yet.")
+    }
+}
+
 @Composable
 fun RiderReadyScene(order: Order) {
     Column(Modifier.fillMaxWidth()) {
-        Image(
-            painter = painterResource(R.drawable.order_rider_ready),
-            contentDescription = "Illustration of a delivery rider on a coral scooter",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().aspectRatio(781f / 602f).clip(RoundedCornerShape(24.dp)),
-        )
+        OrderSceneContainer {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Image(painterResource(R.drawable.order_rider_ready), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                val density = LocalDensity.current
+                val h = with(density) { maxHeight.toPx() }
+                val w = with(density) { maxWidth.toPx() }
+                val riderH = h * 0.80f
+                val riderW = riderH * RiderGeometry.SOURCE_WIDTH / RiderGeometry.SOURCE_HEIGHT
+                val rider = imageResource(R.drawable.order_rider_static)
+                Canvas(Modifier.fillMaxSize().semantics { contentDescription = "RushIt rider waiting at the store" }) {
+                    drawImage(
+                        image = rider,
+                        dstOffset = IntOffset((w * 0.22f).roundToInt(), (h - riderH).roundToInt()),
+                        dstSize = IntSize(riderW.roundToInt(), riderH.roundToInt()),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        SceneTitle("Your rider is ready!", "Your delivery partner is preparing to pick up your order.")
+    }
+}
+
+@Composable
+fun OrderPickedUpScene(order: Order) {
+    val reduced = LocalReducedMotion.current
+    val enter = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(order.id, reduced) {
+        if (reduced) enter.snapTo(1f) else enter.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+    }
+    Column(Modifier.fillMaxWidth()) {
+        OrderSceneContainer {
+            Image(
+                painterResource(R.drawable.order_pickup),
+                "Store employee handing the parcel to the RushIt rider",
+                Modifier.fillMaxSize().graphicsLayer { alpha = enter.value },
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        SceneTitle("Order picked up!", "Your delivery partner has collected your order and is on the way to you.")
+    }
+}
+
+@Composable
+fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionState) {
+    val almostThere = scene == JourneyScene.ALMOST_THERE
+    val rider = imageResource(R.drawable.order_rider_travel)
+    val wheel = imageResource(R.drawable.order_wheel)
+    val skyline = imageResource(R.drawable.order_travel_skyline)
+    val trees = imageResource(R.drawable.order_travel_trees)
+    val road = imageResource(R.drawable.order_travel_road)
+    Column(Modifier.fillMaxWidth()) {
+        OrderSceneContainer {
+            Canvas(Modifier.fillMaxSize().semantics {
+                contentDescription = if (almostThere) "RushIt rider approaching the destination" else "RushIt rider on the way"
+            }) {
+                val w = size.width
+                val h = size.height
+                val scale = h / 183f
+                val stripW = 464f * scale
+                val distance = motion.distance.value * w
+                drawRect(Color(0xFFEAF3F7))
+                drawWrapped(skyline, stripW, 0f, 120f * scale, distance * TravelParallax.SKYLINE)
+                drawWrapped(trees, stripW, 70f * scale, 80f * scale, distance * TravelParallax.TREES)
+                drawWrapped(road, stripW, 140f * scale, 43f * scale, distance * TravelParallax.ROAD)
+
+                val riderH = h * 0.78f
+                val riderW = riderH * RiderGeometry.SOURCE_WIDTH / RiderGeometry.SOURCE_HEIGHT
+                val rx = w * 0.27f
+                val ry = h - riderH - h * 0.07f
+                val wheelR = RiderGeometry.wheelRadius(riderW)
+                val degrees = wheelDegrees(distance, wheelR)
+                val (rearX, rearY) = RiderGeometry.rearHub(riderW, riderH)
+                val (frontX, frontY) = RiderGeometry.frontHub(riderW, riderH)
+                listOf(rearX to rearY, frontX to frontY).forEach { (hx, hy) ->
+                    val cx = rx + hx
+                    val cy = ry + hy
+                    rotate(degrees, pivot = Offset(cx, cy)) {
+                        drawImage(wheel, dstOffset = IntOffset((cx - wheelR).roundToInt(), (cy - wheelR).roundToInt()), dstSize = IntSize((wheelR * 2).roundToInt(), (wheelR * 2).roundToInt()))
+                    }
+                }
+                drawImage(rider, dstOffset = IntOffset(rx.roundToInt(), ry.roundToInt()), dstSize = IntSize(riderW.roundToInt(), riderH.roundToInt()))
+                if (almostThere) {
+                    // Restrained destination cue; no GPS coordinates or ETA are implied.
+                    drawCircle(Coral, w * 0.035f, Offset(w * 0.86f, h * 0.30f))
+                    drawCircle(CardWhite, w * 0.015f, Offset(w * 0.86f, h * 0.30f))
+                }
+            }
+        }
         Spacer(Modifier.height(16.dp))
         SceneTitle(
-            if (order.status == OrderStatus.PICKED_UP) "Order picked up" else "Your rider is ready!",
-            if (order.status == OrderStatus.PICKED_UP) "Your order has been picked up." else "Your delivery partner is preparing to pick up your order.",
+            if (almostThere) "Almost there!" else "On the way!",
+            if (almostThere) "Your delivery partner is very close to your location." else "Your order is on the way to your location.",
         )
-        Spacer(Modifier.height(14.dp))
-        if (order.isDemo) {
-            DemoRiderCard()
-        } else {
-            StatusPill("Partner details not shared yet", color = Amber)
-        }
     }
 }
 
-/** The app has no real rider directory, so this card never pretends to be one. */
-@Composable
-fun DemoRiderCard() {
-    Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).clip(CircleShape).background(Peach), contentAlignment = Alignment.Center) {
-                RushIcon(R.drawable.ic_user_02, null, Modifier.size(26.dp), Coral)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Demo delivery partner", style = MaterialTheme.typography.titleMedium, color = Ink)
-                Text(
-                    "Illustration only · RushIt hasn't assigned a real rider, so no name, rating or phone number is shown.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Muted,
-                )
-            }
-        }
-    }
+private fun DrawScope.drawWrapped(image: ImageBitmap, stripW: Float, y: Float, height: Float, offset: Float) {
+    val start = -(offset % stripW)
+    val dst = IntSize(stripW.roundToInt(), height.roundToInt())
+    drawImage(image, dstOffset = IntOffset(start.roundToInt(), y.roundToInt()), dstSize = dst)
+    drawImage(image, dstOffset = IntOffset((start + stripW).roundToInt(), y.roundToInt()), dstSize = dst)
 }
 
-/** Illustrated route screen. Never claims live GPS or an invented ETA. */
 @Composable
-fun OnTheWayScene(order: Order) {
+fun DeliveryHandoverScene(order: Order, celebrate: Boolean) {
     val reduced = LocalReducedMotion.current
-    val transition = rememberInfiniteTransition(label = "route")
-    val travel by transition.animateFloat(
-        initialValue = 0.1f,
-        targetValue = 0.82f,
-        animationSpec = infiniteRepeatable(tween(6_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "route progress",
-    )
-    Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(24.dp))) {
-            DeliveryRouteMap(Modifier.fillMaxSize(), progress = if (reduced) 0.55f else travel)
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusPill("Illustrated route", color = Coral)
-            Spacer(Modifier.width(8.dp))
-            StatusPill("Not live GPS", color = Amber)
-        }
-        Spacer(Modifier.height(12.dp))
-        SceneTitle("Your order is on the way!", "Your delivery partner is on the way to you.")
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "Live location and arrival estimates aren't connected yet, so this screen shows the order status instead of a countdown.",
-            style = MaterialTheme.typography.bodySmall,
-            color = Muted,
-            textAlign = TextAlign.Center,
-        )
+    val enter = remember(order.id, celebrate) { Animatable(if (reduced || !celebrate) 1f else 0f) }
+    val tick = remember(order.id, celebrate) { Animatable(if (reduced || !celebrate) 1f else 0f) }
+    LaunchedEffect(order.id, celebrate, reduced) {
+        if (reduced || !celebrate) { enter.snapTo(1f); tick.snapTo(1f); return@LaunchedEffect }
+        enter.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
+        tick.animateTo(1f, tween(480, delayMillis = 260, easing = FastOutSlowInEasing))
     }
-}
-
-/** Approaching: scooter slows down beside the destination. */
-@Composable
-fun AlmostThereScene(order: Order) {
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(24.dp))) {
-            CityBackdrop(Modifier.fillMaxSize(), travel = 0f)
-            // destination house
-            Canvas(Modifier.fillMaxSize()) {
-                val baseX = size.width * 0.66f
-                val baseY = size.height * 0.66f
-                drawRoundRect(Color(0xFFF1D9BE), Offset(baseX, baseY - size.height * 0.22f), Size(size.width * 0.24f, size.height * 0.22f), CornerRadius(size.minDimension * 0.02f))
-                val roof = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(baseX - size.width * 0.02f, baseY - size.height * 0.22f)
-                    lineTo(baseX + size.width * 0.12f, baseY - size.height * 0.34f)
-                    lineTo(baseX + size.width * 0.26f, baseY - size.height * 0.22f)
-                    close()
-                }
-                drawPath(roof, DeepRed.copy(alpha = 0.85f))
-                drawRoundRect(Color(0xFF8B5E3C), Offset(baseX + size.width * 0.09f, baseY - size.height * 0.12f), Size(size.width * 0.06f, size.height * 0.12f), CornerRadius(size.minDimension * 0.01f))
+        OrderSceneContainer {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Image(painterResource(R.drawable.order_delivered_bg), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                val density = LocalDensity.current
+                val w = with(density) { maxWidth.toPx() }
+                val h = with(density) { maxHeight.toPx() }
+                val scooterW = w * 0.35f
+                val scooterH = scooterW * 178f / 427f
+                val slide = (1f - enter.value) * -w * 0.08f
+                Image(
+                    painterResource(R.drawable.order_scooter_parked), null,
+                    Modifier.offset(x = with(density) { slide.toDp() }, y = with(density) { (h - scooterH).toDp() })
+                        .size(with(density) { scooterW.toDp() }, with(density) { scooterH.toDp() })
+                        .graphicsLayer { alpha = enter.value },
+                )
+                val handoverH = h * 0.96f
+                val handoverW = handoverH * 310f / 204f
+                Image(
+                    painterResource(R.drawable.order_handover), "RushIt rider handing the groceries to the customer",
+                    Modifier.offset(x = with(density) { (w * 0.50f).toDp() }, y = with(density) { (h - handoverH).toDp() })
+                        .size(with(density) { handoverW.toDp() }, with(density) { handoverH.toDp() })
+                        .graphicsLayer { alpha = enter.value },
+                )
+                SuccessCheck(Modifier.align(Alignment.TopEnd).padding(8.dp).size(40.dp), progress = tick.value)
             }
-            DeliveryScooter(
-                modifier = Modifier.fillMaxWidth(0.66f).height(140.dp).align(Alignment.BottomStart).padding(start = 4.dp, bottom = 16.dp),
-                wheelRotation = 0f,
-                lean = 0f,
-            )
         }
         Spacer(Modifier.height(16.dp))
-        SceneTitle("Almost there!", "Your delivery partner is approaching your location.")
+        SceneTitle("Delivered!", "Your order has been successfully delivered.")
     }
 }
 
-/** Delivered celebration: tick, light confetti, then the actions. */
 @Composable
-fun DeliveredScene(
-    order: Order,
-    celebrate: Boolean,
-    onViewOrder: () -> Unit,
-    onContinueShopping: () -> Unit,
-) {
-    val reduced = LocalReducedMotion.current
-    val tick = remember(order.id, celebrate) { Animatable(if (reduced || !celebrate) 1f else 0f) }
-    val confetti = remember(order.id, celebrate) { Animatable(0f) }
-    val content = remember(order.id, celebrate) { Animatable(1f) }
-
-    LaunchedEffect(order.id, celebrate, reduced) {
-        if (!celebrate || reduced) {
-            tick.snapTo(1f); content.snapTo(1f); return@LaunchedEffect
-        }
-        tick.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
-        confetti.animateTo(1f, tween(1_200, easing = LinearEasing))
-    }
-
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().height(232.dp), contentAlignment = Alignment.Center) {
-            Confetti(Modifier.fillMaxSize(), progress = confetti.value, seed = order.id.hashCode() + 3)
-            Box(Modifier.fillMaxWidth().height(190.dp)) {
-                CityBackdrop(Modifier.fillMaxSize(), travel = 0f, showRoad = true)
-                // rider handing over the bag
-                Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 6.dp).size(width = 132.dp, height = 108.dp)) {
-                    DeliveryScooter(Modifier.fillMaxSize(), wheelRotation = 0f)
+fun TerminalOrderScene(title: String, message: String) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        OrderSceneContainer {
+            Box(Modifier.fillMaxSize().background(Peach.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(96.dp).clip(CircleShape).background(CardWhite), contentAlignment = Alignment.Center) {
+                    RushIcon(R.drawable.ic_cancel_01, null, Modifier.size(44.dp), Muted)
                 }
-                Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 10.dp).size(84.dp)) { RushItBag(Modifier.fillMaxSize()) }
-            }
-            SuccessCheck(
-                modifier = Modifier.align(Alignment.TopCenter).size(58.dp),
-                progress = tick.value,
-                scale = if (reduced) 1f else (0.75f + 0.25f * tick.value),
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Column(Modifier.graphicsLayer { alpha = content.value }, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Order delivered!", style = MaterialTheme.typography.headlineMedium, color = Success, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            Text("Thank you for shopping with RushIt.", style = MaterialTheme.typography.bodyLarge, color = Muted, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(18.dp))
-            RushButton("View Order", onViewOrder, arrow = false)
-            Spacer(Modifier.height(8.dp))
-            androidx.compose.material3.TextButton(onClick = onContinueShopping) {
-                Text("Continue Shopping", color = DeepRed, style = MaterialTheme.typography.labelMedium)
             }
         }
-    }
-}
-
-/** Shared terminal state for cancelled and failed orders — deliberately not celebratory. */
-@Composable
-fun TerminalOrderScene(
-    title: String,
-    message: String,
-    onContinueShopping: () -> Unit,
-    onViewOrder: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(24.dp)).background(Peach.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(96.dp).clip(CircleShape).background(CardWhite), contentAlignment = Alignment.Center) {
-                RushIcon(R.drawable.ic_cancel_01, null, Modifier.size(44.dp), Muted)
-            }
-        }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
         SceneTitle(title, message)
-        Spacer(Modifier.height(18.dp))
-        RushButton("View order", onViewOrder, arrow = false)
-        Spacer(Modifier.height(6.dp))
-        androidx.compose.material3.TextButton(onClick = onContinueShopping) {
-            Text("Continue shopping", color = DeepRed, style = MaterialTheme.typography.labelMedium)
-        }
     }
 }
-
