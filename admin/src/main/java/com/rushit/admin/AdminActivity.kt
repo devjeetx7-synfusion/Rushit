@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CheckboxDefaults
@@ -87,7 +89,7 @@ class AdminActivity : ComponentActivity() {
 private fun AdminRoot() {
     val nav = rememberNavController()
     val back by nav.currentBackStackEntryAsState()
-    val route = back?.destination?.route ?: "login"
+    val route = back?.destination?.route ?: AdminRoutes.SPLASH
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences(ADMIN_PREFS_NAME, android.content.Context.MODE_PRIVATE) }
 
@@ -132,7 +134,7 @@ private fun AdminRoot() {
     var adminRole by remember(preferences) { mutableStateOf(preferences.getString("admin_role", "Super Admin") ?: "Super Admin") }
 
     var settingsVersion by remember { mutableIntStateOf(0) }
-    var homeDraftDirty by remember { mutableStateOf(false) }
+    var homeDraftDirty by rememberSaveable { mutableStateOf(false) }
     var homeDraftRevision by remember { mutableIntStateOf(0) }
     var pendingDesignerDestination by remember { mutableStateOf<String?>(null) }
     var snackbar by remember { mutableStateOf("") }
@@ -153,23 +155,19 @@ private fun AdminRoot() {
     val roleSpec = AdminRoleSpec.fromLabel(adminRole)
     val permissions = roleSpec.permissions
 
-    val showTabs = route !in setOf(
-        "login", "splash", "product_edit", "product_edit/{index}", "section/{index}",
-        "festival_edit/{index}", "offer_edit/{index}", "order_detail/{index}", "customer_detail/{index}",
-    )
+    val window = rememberAdminWindow()
+    val isAuth = AdminRoutes.isAuth(route)
+    val showChrome = !isAuth
+    val showBottomBar = showChrome &&
+        window.navLayout == AdminNavLayout.BottomBar &&
+        !AdminRoutes.isImmersiveEditor(route)
+    val selectedTab = AdminRoutes.parentTab(route)
     fun navigateToRootTab(destination: String) {
-        nav.navigate(destination) {
-            popUpTo("home") { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+        if (route == AdminRoutes.DESIGNER && homeDraftDirty) {
+            pendingDesignerDestination = destination
+            return
         }
-    }
-    val selectedTab = when (route) {
-        "home" -> "home"
-        "catalog", "product_edit", "product_edit/{index}", "categories" -> "catalog"
-        "orders", "order_detail/{index}" -> "orders"
-        "themes", "designer", "preview", "festivals", "schedule", "section/{index}", "festival_edit/{index}" -> "themes"
-        else -> "more"
+        nav.navigateToAdminTab(destination, route)
     }
 
     fun persistProducts() = savePrefList(preferences, "products", products)
@@ -206,30 +204,70 @@ private fun AdminRoot() {
 
     val inProgressBadge = orders.count { extractOrderStatus(it) !in setOf("Delivered", "Cancelled") }
 
+    val adminName = preferences.getString("admin_name", "Dharmjeet Singh") ?: "Dharmjeet Singh"
+    val storeName = preferences.getString("store_name", "RushIt") ?: "RushIt"
+    val adminInitials = adminName.split(' ').mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifBlank { "A" }
+    val navBadges = remember(inProgressBadge) { mapOf(AdminRoutes.ORDERS to inProgressBadge) }
+
     RushItAdminTheme(config = themeConfig) {
         CompositionLocalProvider(
             LocalAdminNavigation provides nav,
             LocalAdminPermissions provides permissions,
+            LocalAdminWindow provides window,
         ) {
             Scaffold(
                 containerColor = AdminColorScheme.background,
                 snackbarHost = { SnackbarHost(snackbarState) },
                 bottomBar = {
-                    if (showTabs) {
+                    if (showBottomBar) {
                         FloatingAdminBottomBar(
                             selectedRoute = selectedTab,
-                            onSelectTab = { dest ->
-                                if (route != dest) {
-                                    if (route == "designer" && homeDraftDirty) pendingDesignerDestination = dest
-                                    else navigateToRootTab(dest)
-                                }
-                            },
-                            badgeCounts = mapOf("orders" to inProgressBadge),
+                            onSelectTab = { navigateToRootTab(it) },
+                            badgeCounts = navBadges,
                         )
                     }
                 },
             ) { padding ->
-                NavHost(navController = nav, startDestination = "splash", modifier = Modifier.padding(padding)) {
+                Row(
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize(),
+                ) {
+                    if (showChrome && window.navLayout == AdminNavLayout.Rail) {
+                        AdminNavRail(
+                            selectedRoute = selectedTab,
+                            onSelectTab = { navigateToRootTab(it) },
+                            onOpenProfile = { nav.navigate(AdminRoutes.PROFILE) },
+                            initials = adminInitials,
+                            badgeCounts = navBadges,
+                        )
+                    }
+                    if (showChrome && window.navLayout == AdminNavLayout.Sidebar) {
+                        AdminNavSidebar(
+                            selectedRoute = route,
+                            onSelect = { dest ->
+                                when (dest) {
+                                    AdminRoutes.CUSTOMERS, AdminRoutes.FESTIVALS, AdminRoutes.PROFILE -> {
+                                        if (route == AdminRoutes.DESIGNER && homeDraftDirty) pendingDesignerDestination = dest
+                                        else nav.navigate(dest) { launchSingleTop = true }
+                                    }
+                                    else -> navigateToRootTab(dest)
+                                }
+                            },
+                            onOpenProfile = { nav.navigate(AdminRoutes.PROFILE) },
+                            storeName = storeName,
+                            adminName = adminName,
+                            roleName = permissions.roleName,
+                            initials = adminInitials,
+                            badgeCounts = navBadges,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    ) {
+                NavHost(navController = nav, startDestination = "splash", modifier = Modifier.fillMaxSize().imePadding()) {
                     composable("splash") {
                         SplashScreen(onFinish = {
                             val destination = if (preferences.getBoolean("demo_session", false)) "home" else "login"
@@ -660,11 +698,13 @@ private fun AdminRoot() {
                             sections.clear(); sections.addAll(savedSections)
                             homeDraftDirty = false
                             pendingDesignerDestination = null
-                            if (destination in setOf("home", "catalog", "orders", "themes", "more")) navigateToRootTab(destination)
-                            else nav.popBackStack()
+                            if (destination in AdminRoutes.rootTabs) navigateToRootTab(destination)
+                            else nav.navigate(destination) { launchSingleTop = true }
                         },
                         onDismiss = { pendingDesignerDestination = null },
                     )
+                }
+                    }
                 }
             }
         }
@@ -757,20 +797,9 @@ private fun LoginScreen(onLogin: (Boolean) -> Unit) {
     var reveal by rememberSaveable { mutableStateOf(false) }
     var rememberAdmin by rememberSaveable { mutableStateOf(true) }
     var error by rememberSaveable { mutableStateOf("") }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFFFFEEE9), AdminColorScheme.background, AdminColorScheme.background)))
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 26.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        RushItBrandLogo(size = 72.dp)
-        Spacer(Modifier.height(14.dp))
-        Text("RushIt Admin", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = AdminColorScheme.primary)
-        Text("Welcome back", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AdminColorScheme.primaryText, modifier = Modifier.padding(top = 22.dp))
+    val window = LocalAdminWindow.current
+    val form: @Composable () -> Unit = {
+        Text("Welcome back", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AdminColorScheme.primaryText)
         Text("Sign in to manage your store", color = AdminColorScheme.secondaryText, modifier = Modifier.padding(top = 5.dp, bottom = 18.dp))
         AdminField("Email or phone", email, { email = it }, keyboard = KeyboardType.Email)
         Spacer(Modifier.height(10.dp))
@@ -815,5 +844,45 @@ private fun LoginScreen(onLogin: (Boolean) -> Unit) {
             modifier = Modifier.padding(top = 10.dp),
         )
         Text("Restricted area · Administrators only", color = AdminColorScheme.secondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp, bottom = 10.dp))
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFFFFEEE9), AdminColorScheme.background, AdminColorScheme.background)))
+            .imePadding(),
+    ) {
+        if (window.isWide) {
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(36.dp),
+            ) {
+                Column(Modifier.weight(0.9f), horizontalAlignment = Alignment.Start) {
+                    RushItBrandLogo(size = 72.dp)
+                    Spacer(Modifier.height(14.dp))
+                    Text("RushIt Admin", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = AdminColorScheme.primary)
+                    Text("Local store operations console", color = AdminColorScheme.secondaryText, modifier = Modifier.padding(top = 6.dp))
+                }
+                Column(Modifier.weight(1.1f).widthIn(max = 460.dp)) { form() }
+            }
+        } else {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 26.dp, vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                RushItBrandLogo(size = 72.dp)
+                Spacer(Modifier.height(14.dp))
+                Text("RushIt Admin", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = AdminColorScheme.primary)
+                Spacer(Modifier.height(22.dp))
+                form()
+            }
+        }
     }
 }

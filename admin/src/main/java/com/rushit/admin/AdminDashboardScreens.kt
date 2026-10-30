@@ -83,10 +83,13 @@ fun DashboardScreen(
         offers.count { it.split('|').getOrNull(8) != "Disabled" }
     }
 
+    val window = LocalAdminWindow.current
+    val pagePad = window.pagePadding
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(start = pagePad, end = pagePad, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(window.sectionSpacing),
     ) {
         item {
             Row(
@@ -143,80 +146,58 @@ fun DashboardScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiCard(
-                    title = "Orders",
-                    value = orders.size.toString(),
-                    detail = "Local demo records",
-                    icon = AdminIcons.Orders,
-                    tint = brand,
-                    soft = brandSoft,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("orders") },
-                )
-                KpiCard(
-                    title = "In Progress",
-                    value = inProgressCount.toString(),
-                    detail = "Active fulfillment",
-                    icon = AdminIcons.Clock,
-                    tint = AdminColorScheme.warning,
-                    soft = AdminColorScheme.warningSoft,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("orders") },
-                )
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiCard(
-                    title = "Products",
-                    value = products.size.toString(),
-                    detail = "Local catalog",
-                    icon = AdminIcons.Package,
-                    tint = AdminColorScheme.info,
-                    soft = AdminColorScheme.infoSoft,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("catalog") },
-                )
-                KpiCard(
-                    title = "Delivered",
-                    value = deliveredCount.toString(),
-                    detail = "Completed demo orders",
-                    icon = AdminIcons.Check,
-                    tint = AdminColorScheme.success,
-                    soft = AdminColorScheme.successSoft,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("orders") },
-                )
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiCard(
-                    title = "Customers",
-                    value = customerCount.toString(),
-                    detail = "Illustrative demo list",
-                    icon = AdminIcons.Users,
-                    tint = Color(0xFF7C4DFF),
-                    soft = Color(0xFFF2EEFF),
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("customers") },
-                )
-                KpiCard(
-                    title = "Attention",
-                    value = lowStockProducts.size.toString(),
-                    detail = "Low / out of stock",
-                    icon = AdminIcons.AlertTriangle,
-                    tint = AdminColorScheme.error,
-                    soft = AdminColorScheme.errorSoft,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpen("catalog") },
-                )
+            val kpiData = listOf(
+                Triple("Orders", orders.size.toString(), "Local demo records") to (AdminIcons.Orders to brand),
+                Triple("In Progress", inProgressCount.toString(), "Active fulfillment") to (AdminIcons.Clock to AdminColorScheme.warning),
+                Triple("Products", products.size.toString(), "Local catalog") to (AdminIcons.Package to AdminColorScheme.info),
+                Triple("Delivered", deliveredCount.toString(), "Completed demo orders") to (AdminIcons.Check to AdminColorScheme.success),
+                Triple("Customers", customerCount.toString(), "Illustrative demo list") to (AdminIcons.Users to Color(0xFF7C4DFF)),
+                Triple("Attention", lowStockProducts.size.toString(), "Low / out of stock") to (AdminIcons.AlertTriangle to AdminColorScheme.error),
+            )
+            val softFor = mapOf(
+                brand to brandSoft,
+                AdminColorScheme.warning to AdminColorScheme.warningSoft,
+                AdminColorScheme.info to AdminColorScheme.infoSoft,
+                AdminColorScheme.success to AdminColorScheme.successSoft,
+                Color(0xFF7C4DFF) to Color(0xFFF2EEFF),
+                AdminColorScheme.error to AdminColorScheme.errorSoft,
+            )
+            val destinations = listOf("orders", "orders", "catalog", "orders", "customers", "catalog")
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                kpiData.indices.chunked(window.kpiColumns).forEach { rowIdx ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rowIdx.forEach { i ->
+                            val (meta, iconTint) = kpiData[i]
+                            KpiCard(
+                                title = meta.first,
+                                value = meta.second,
+                                detail = meta.third,
+                                icon = iconTint.first,
+                                tint = iconTint.second,
+                                soft = softFor[iconTint.second] ?: brandSoft,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onOpen(destinations[i]) },
+                            )
+                        }
+                        repeat(window.kpiColumns - rowIdx.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
 
-        item { SalesAnalyticsCard(orders = orders, onOpenOrders = { onOpen("orders") }) }
-        item { OrderStatusDistributionCard(orders = orders, onOpenOrders = { onOpen("orders") }) }
+        if (window.isWide) {
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1.35f)) { SalesAnalyticsCard(orders = orders, onOpenOrders = { onOpen("orders") }) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OrderStatusDistributionCard(orders = orders, onOpenOrders = { onOpen("orders") })
+                    }
+                }
+            }
+        } else {
+            item { SalesAnalyticsCard(orders = orders, onOpenOrders = { onOpen("orders") }) }
+            item { OrderStatusDistributionCard(orders = orders, onOpenOrders = { onOpen("orders") }) }
+        }
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -297,15 +278,23 @@ fun DashboardScreen(
 
         item { SectionTitle("Quick actions", "Shortcuts") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuickActionCard("Add Product", AdminIcons.Plus, Modifier.weight(1f)) { onOpen("product_edit") }
-                QuickActionCard("Home Designer", AdminIcons.Layout, Modifier.weight(1f)) { onOpen("designer") }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuickActionCard("View Orders", AdminIcons.Orders, Modifier.weight(1f)) { onOpen("orders") }
-                QuickActionCard("Send Notification", AdminIcons.Bell, Modifier.weight(1f)) { onOpen("notifications") }
+            val actions = listOf(
+                Triple("Add Product", AdminIcons.Plus, "product_edit"),
+                Triple("Home Designer", AdminIcons.Layout, "designer"),
+                Triple("View Orders", AdminIcons.Orders, "orders"),
+                Triple("Send Notification", AdminIcons.Bell, "notifications"),
+            )
+            val actionCols = if (window.isWide) 4 else 2
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                actions.indices.chunked(actionCols).forEach { rowIdx ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowIdx.forEach { i ->
+                            val action = actions[i]
+                            QuickActionCard(action.first, action.second, Modifier.weight(1f)) { onOpen(action.third) }
+                        }
+                        repeat(actionCols - rowIdx.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
 
@@ -514,7 +503,8 @@ fun CatalogScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    val window = LocalAdminWindow.current
+    Column(Modifier.fillMaxSize().padding(horizontal = window.pagePadding)) {
         ScreenHeader(
             title = "Products",
             subtitle = "${products.size} items · local demo catalog",
@@ -669,7 +659,7 @@ fun OrdersScreen(orders: List<String>, onOpen: (Int) -> Unit, onOpenRoles: () ->
             }
         }
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().adminPageInsets()) {
         ScreenHeader("Orders", "${orders.size} local demo orders")
         if (!permissions.canViewOrders) {
             RoleAccessBanner(permissions.roleName, "View Orders", onOpenRoles)
@@ -727,7 +717,7 @@ fun OrderDetailScreen(
     val brand = LocalAdminThemeConfig.current.activePrimary
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
