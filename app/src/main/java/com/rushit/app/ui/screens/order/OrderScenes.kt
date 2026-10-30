@@ -8,7 +8,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -34,20 +33,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.rushit.app.R
 import com.rushit.app.data.model.Order
@@ -67,7 +59,6 @@ import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.Success
 import kotlinx.coroutines.isActive
-import kotlin.math.roundToInt
 
 /** Hoisted so On the Way → Almost There keeps the same wheel/road phase. */
 class TravelMotionState {
@@ -242,14 +233,12 @@ fun RiderReadyScene(order: Order) {
                 val w = with(density) { maxWidth.toPx() }
                 val riderH = h * 0.80f
                 val riderW = riderH * RiderGeometry.SOURCE_WIDTH / RiderGeometry.SOURCE_HEIGHT
-                val rider = imageResource(R.drawable.order_rider_static)
-                Canvas(Modifier.fillMaxSize().semantics { contentDescription = "RushIt rider waiting at the store" }) {
-                    drawImage(
-                        image = rider,
-                        dstOffset = IntOffset((w * 0.22f).roundToInt(), (h - riderH).roundToInt()),
-                        dstSize = IntSize(riderW.roundToInt(), riderH.roundToInt()),
-                    )
-                }
+                Image(
+                    painterResource(R.drawable.order_rider_static),
+                    "RushIt rider waiting at the store",
+                    Modifier.offset(x = with(density) { (w * 0.22f).toDp() }, y = with(density) { (h - riderH).toDp() })
+                        .size(with(density) { riderW.toDp() }, with(density) { riderH.toDp() }),
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -281,25 +270,21 @@ fun OrderPickedUpScene(order: Order) {
 @Composable
 fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionState) {
     val almostThere = scene == JourneyScene.ALMOST_THERE
-    val rider = imageResource(R.drawable.order_rider_travel)
-    val wheel = imageResource(R.drawable.order_wheel)
-    val skyline = imageResource(R.drawable.order_travel_skyline)
-    val trees = imageResource(R.drawable.order_travel_trees)
-    val road = imageResource(R.drawable.order_travel_road)
     Column(Modifier.fillMaxWidth()) {
         OrderSceneContainer {
-            Canvas(Modifier.fillMaxSize().semantics {
+            BoxWithConstraints(Modifier.fillMaxSize().semantics {
                 contentDescription = if (almostThere) "RushIt rider approaching the destination" else "RushIt rider on the way"
             }) {
-                val w = size.width
-                val h = size.height
+                val density = LocalDensity.current
+                val w = with(density) { maxWidth.toPx() }
+                val h = with(density) { maxHeight.toPx() }
                 val scale = h / 183f
                 val stripW = 464f * scale
                 val distance = motion.distance.value * w
-                drawRect(Color(0xFFEAF3F7))
-                drawWrapped(skyline, stripW, 0f, 120f * scale, distance * TravelParallax.SKYLINE)
-                drawWrapped(trees, stripW, 70f * scale, 80f * scale, distance * TravelParallax.TREES)
-                drawWrapped(road, stripW, 140f * scale, 43f * scale, distance * TravelParallax.ROAD)
+                Box(Modifier.fillMaxSize().background(Color(0xFFEAF3F7)))
+                ParallaxStrip(R.drawable.order_travel_skyline, stripW, 0f, 120f * scale, distance * TravelParallax.SKYLINE)
+                ParallaxStrip(R.drawable.order_travel_trees, stripW, 70f * scale, 80f * scale, distance * TravelParallax.TREES)
+                ParallaxStrip(R.drawable.order_travel_road, stripW, 140f * scale, 43f * scale, distance * TravelParallax.ROAD)
 
                 val riderH = h * 0.78f
                 val riderW = riderH * RiderGeometry.SOURCE_WIDTH / RiderGeometry.SOURCE_HEIGHT
@@ -312,15 +297,24 @@ fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionStat
                 listOf(rearX to rearY, frontX to frontY).forEach { (hx, hy) ->
                     val cx = rx + hx
                     val cy = ry + hy
-                    rotate(degrees, pivot = Offset(cx, cy)) {
-                        drawImage(wheel, dstOffset = IntOffset((cx - wheelR).roundToInt(), (cy - wheelR).roundToInt()), dstSize = IntSize((wheelR * 2).roundToInt(), (wheelR * 2).roundToInt()))
-                    }
+                    Image(
+                        painterResource(R.drawable.order_wheel), null,
+                        Modifier.offset(x = with(density) { (cx - wheelR).toDp() }, y = with(density) { (cy - wheelR).toDp() })
+                            .size(with(density) { (wheelR * 2f).toDp() })
+                            .graphicsLayer { rotationZ = degrees },
+                    )
                 }
-                drawImage(rider, dstOffset = IntOffset(rx.roundToInt(), ry.roundToInt()), dstSize = IntSize(riderW.roundToInt(), riderH.roundToInt()))
+                Image(
+                    painterResource(R.drawable.order_rider_travel), null,
+                    Modifier.offset(x = with(density) { rx.toDp() }, y = with(density) { ry.toDp() })
+                        .size(with(density) { riderW.toDp() }, with(density) { riderH.toDp() }),
+                )
                 if (almostThere) {
-                    // Restrained destination cue; no GPS coordinates or ETA are implied.
-                    drawCircle(Coral, w * 0.035f, Offset(w * 0.86f, h * 0.30f))
-                    drawCircle(CardWhite, w * 0.015f, Offset(w * 0.86f, h * 0.30f))
+                    Box(
+                        Modifier.offset(x = with(density) { (w * 0.83f).toDp() }, y = with(density) { (h * 0.26f).toDp() })
+                            .size(with(density) { (w * 0.07f).toDp() }).clip(CircleShape).background(Coral),
+                        contentAlignment = Alignment.Center,
+                    ) { Box(Modifier.size(with(density) { (w * 0.03f).toDp() }).clip(CircleShape).background(CardWhite)) }
                 }
             }
         }
@@ -332,11 +326,23 @@ fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionStat
     }
 }
 
-private fun DrawScope.drawWrapped(image: ImageBitmap, stripW: Float, y: Float, height: Float, offset: Float) {
+@Composable
+private fun ParallaxStrip(res: Int, stripW: Float, y: Float, height: Float, offset: Float) {
+    val density = LocalDensity.current
     val start = -(offset % stripW)
-    val dst = IntSize(stripW.roundToInt(), height.roundToInt())
-    drawImage(image, dstOffset = IntOffset(start.roundToInt(), y.roundToInt()), dstSize = dst)
-    drawImage(image, dstOffset = IntOffset((start + stripW).roundToInt(), y.roundToInt()), dstSize = dst)
+    val widthDp = with(density) { stripW.toDp() }
+    val heightDp = with(density) { height.toDp() }
+    val yDp = with(density) { y.toDp() }
+    Image(
+        painterResource(res), null,
+        Modifier.offset(x = with(density) { start.toDp() }, y = yDp).size(widthDp, heightDp),
+        contentScale = ContentScale.FillBounds,
+    )
+    Image(
+        painterResource(res), null,
+        Modifier.offset(x = with(density) { (start + stripW).toDp() }, y = yDp).size(widthDp, heightDp),
+        contentScale = ContentScale.FillBounds,
+    )
 }
 
 @Composable
