@@ -37,6 +37,7 @@ jobs:
           status=${PIPESTATUS[0]}
           if [[ $status -ne 0 ]]; then
             grep -E '^e: |error:|FAILURE:' /tmp/gradle-build.log | head -40 | sed 's/%/%25/g' | sed 's/::/_/g' | while IFS= read -r line; do echo "::error::$line"; done
+            tail -60 /tmp/gradle-build.log | sed 's/%/%25/g' | sed 's/::/_/g' | while IFS= read -r line; do echo "::error::tail: $line"; done
           fi
           exit $status
       - name: Android lint
