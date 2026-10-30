@@ -57,8 +57,8 @@ Prepared lossless WebP assets in `app/src/main/res/drawable-nodpi/`:
 - `order_rider_ready` — original storefront with the rider region inpainted so the supplied rider
   can be composited consistently.
 - `order_pickup` — original combined employee/rider handover illustration (see limitations).
-- `order_travel_bg/skyline/trees/road` — original travel background with the rider inpainted, then
-  sliced into parallax bands.
+- `order_travel_skyline/trees/road` — original travel background with the rider inpainted, then
+  sliced into parallax bands (the intermediate full background is not shipped).
 - `order_delivered` — original doorway handover illustration, kept combined because reliable separate
   rider/customer/parcel layers were not available.
 
