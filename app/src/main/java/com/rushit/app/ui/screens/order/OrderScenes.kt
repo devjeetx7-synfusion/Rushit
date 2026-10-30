@@ -87,13 +87,12 @@ fun rememberTravelMotion(orderId: String, active: Boolean, almostThere: Boolean)
         if (!active || reduced) return@LaunchedEffect
         var last = 0L
         while (isActive) {
-            withFrameNanos { now ->
-                if (last != 0L) {
-                    val dt = ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
-                    motion.distance.snapTo((motion.distance.value + dt * 0.35f * motion.speed.value) % 1_000f)
-                }
-                last = now
+            val now = withFrameNanos { it }
+            if (last != 0L) {
+                val dt = ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+                motion.distance.snapTo((motion.distance.value + dt * 0.35f * motion.speed.value) % 1_000f)
             }
+            last = now
         }
     }
     return motion

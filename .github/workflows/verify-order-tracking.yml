@@ -30,9 +30,25 @@ jobs:
           cmdline-tools-version: '12266719'
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
       - name: Build and run unit tests
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain 2>&1 | tee /tmp/gradle-build.log
+          status=${PIPESTATUS[0]}
+          if [[ $status -ne 0 ]]; then
+            grep -E '^e: |error:|FAILURE:' /tmp/gradle-build.log | head -40 | sed 's/%/%25/g' | sed 's/::/_/g' | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
       - name: Android lint
-        run: ./gradlew :app:lintDebug --no-daemon --console=plain
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :app:lintDebug --no-daemon --console=plain 2>&1 | tee /tmp/gradle-lint.log
+          status=${PIPESTATUS[0]}
+          if [[ $status -ne 0 ]]; then
+            grep -E '^e: |error:|FAILURE:' /tmp/gradle-lint.log | head -40 | sed 's/%/%25/g' | sed 's/::/_/g' | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
       - name: Summarize results
         if: always()
         run: |
