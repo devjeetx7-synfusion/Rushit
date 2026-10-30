@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "RushIt"
-include(":app")
+include(":app", ":admin")
