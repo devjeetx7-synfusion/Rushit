@@ -83,6 +83,7 @@ fun ProductForm(
     val brand = LocalAdminThemeConfig.current.activePrimary
 
     val window = LocalAdminWindow.current
+    AdaptiveContent(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = window.pagePadding),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -182,6 +183,7 @@ fun ProductForm(
             onDismiss = { confirmDiscard = false },
         )
     }
+    }
 }
 
 @Composable
@@ -191,6 +193,7 @@ fun CustomersScreen(onOpen: (Int) -> Unit, notes: Map<String, String>, onOpenRol
     val filtered by remember(search) {
         derivedStateOf { demoCustomers.withIndex().filter { it.value.contains(search, true) } }
     }
+    val window = LocalAdminWindow.current
     Column(Modifier.fillMaxSize().adminPageInsets()) {
         ScreenHeader("Customers", "${demoCustomers.size} demo customers")
         if (!permissions.canManageCustomers) {
@@ -200,15 +203,23 @@ fun CustomersScreen(onOpen: (Int) -> Unit, notes: Map<String, String>, onOpenRol
         AdminSearchField(search, { search = it }, "Search customers…")
         LazyColumn(contentPadding = PaddingValues(top = 10.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (filtered.isEmpty()) item { EmptyState("No customers found", "Try another name or city.") }
-            items(filtered, key = { it.index }) { indexed ->
-                val hasNote = notes[indexed.index.toString()].orEmpty().isNotBlank()
-                DataRow(
-                    glyph = "C",
-                    title = indexed.value.substringBefore(" · "),
-                    detail = indexed.value.substringAfter(" · ") + if (hasNote) " · note saved" else "",
-                    onClick = { onOpen(indexed.index) },
-                    icon = AdminIcons.Users,
-                )
+            items(
+                filtered.chunked(window.listColumns.coerceAtLeast(1)),
+                key = { row -> row.joinToString("-") { it.index.toString() } },
+            ) { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { indexed ->
+                        val hasNote = notes[indexed.index.toString()].orEmpty().isNotBlank()
+                        DataRow(
+                            title = indexed.value.substringBefore(" · "),
+                            detail = indexed.value.substringAfter(" · ") + if (hasNote) " · note saved" else "",
+                            onClick = { onOpen(indexed.index) },
+                            icon = AdminIcons.Users,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(window.listColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }
@@ -227,27 +238,28 @@ fun CustomerDetailScreen(
         item { ScreenHeader(record.substringBefore(" · "), "Customer profile · local demo") }
         item { DemoNotice() }
         item {
-            AdminSurfaceCard {
-                Text("Customer information", fontWeight = FontWeight.Bold)
-                Text("Demo ID · CUST-${1001 + index}")
-                Text("City · ${record.split(" · ").getOrNull(1)}")
-                Text("Contact details are illustrative only", color = AdminColorScheme.secondaryText)
-            }
-        }
-        item {
-            AdminSurfaceCard {
-                Text("Order history", fontWeight = FontWeight.Bold)
-                Text(record.substringAfterLast(" · "))
-                Text("Recent order · ${initialOrders[index % initialOrders.size].substringBefore(" · ")}", color = AdminColorScheme.secondaryText)
-                Text("Total spend is not calculated because demo orders are not linked to customer IDs.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
-            }
-        }
-        item {
-            AdminSurfaceCard {
-                Text("Account status", fontWeight = FontWeight.Bold)
-                StatusChip("Active · Demo")
-                Text("Local status only · no customer account is changed", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
-            }
+            AdaptiveTwoPane(
+                start = {
+                    AdminSurfaceCard {
+                        Text("Customer information", fontWeight = FontWeight.Bold)
+                        Text("Demo ID · CUST-${1001 + index}")
+                        Text("City · ${record.split(" · ").getOrNull(1)}")
+                        Text("Contact details are illustrative only", color = AdminColorScheme.secondaryText)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Account status", fontWeight = FontWeight.Bold)
+                        StatusChip("Active · Demo")
+                        Text("Local status only · no customer account is changed", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                    }
+                },
+                end = {
+                    AdminSurfaceCard {
+                        Text("Order history", fontWeight = FontWeight.Bold)
+                        Text(record.substringAfterLast(" · "))
+                        Text("Recent order · ${initialOrders[index % initialOrders.size].substringBefore(" · ")}", color = AdminColorScheme.secondaryText)
+                        Text("Total spend is not calculated because demo orders are not linked to customer IDs.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                    }
+                },
+            )
         }
         item {
             AdminSurfaceCard {
@@ -389,6 +401,7 @@ fun SettingsScreen(
     var feedback by remember { mutableStateOf("") }
     var confirmReset by remember { mutableStateOf(false) }
 
+    AdaptiveContent(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize().adminPageInsets(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -461,6 +474,7 @@ fun SettingsScreen(
             onConfirm = { onReset(); confirmReset = false },
             onDismiss = { confirmReset = false },
         )
+    }
     }
 }
 

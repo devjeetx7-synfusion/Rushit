@@ -82,6 +82,27 @@ data class AdminPermissions(
     )
 }
 
+fun AdminPermissions.allowsDestination(route: String?): Boolean {
+    val r = route ?: return true
+    return when (r) {
+        AdminRoutes.SPLASH, AdminRoutes.LOGIN, AdminRoutes.MORE, AdminRoutes.PROFILE,
+        AdminRoutes.ROLES, AdminRoutes.ACTIVITY_LOGS,
+        -> true
+        AdminRoutes.HOME -> canViewDashboard
+        AdminRoutes.CATALOG, AdminRoutes.PRODUCT_EDIT, AdminRoutes.PRODUCT_EDIT_INDEX ->
+            canManageProducts || canManageCategories
+        AdminRoutes.CATEGORIES -> canManageCategories || canManageProducts
+        AdminRoutes.ORDERS, AdminRoutes.ORDER_DETAIL -> canViewOrders
+        AdminRoutes.THEMES, AdminRoutes.DESIGNER, AdminRoutes.SECTION, AdminRoutes.PREVIEW -> canManageContent
+        AdminRoutes.FESTIVALS, AdminRoutes.FESTIVAL_EDIT, AdminRoutes.SCHEDULE -> canManageCampaigns
+        AdminRoutes.CUSTOMERS, AdminRoutes.CUSTOMER_DETAIL -> canManageCustomers
+        AdminRoutes.OFFERS, AdminRoutes.OFFER_EDIT -> canManageOffers
+        AdminRoutes.NOTIFICATIONS -> canManageNotifications
+        AdminRoutes.SETTINGS -> canManageSettings
+        else -> true
+    }
+}
+
 enum class AdminRoleSpec(
     val label: String,
     val shortTag: String,
@@ -186,8 +207,8 @@ enum class AdminRoleSpec(
         label = "Support Agent",
         shortTag = "Customers & Lookup",
         description = "View customer profiles, inspect order history, and add internal support notes without altering catalog or settings.",
-        accentColor = Color(0xFF7C4DFF),
-        softColor = Color(0xFFF2EEFF),
+        accentColor = Color(0xFFB8336A),
+        softColor = Color(0xFFFCEEF4),
         permissions = AdminPermissions(
             roleName = "Support Agent",
             roleSummary = "Scoped to customer directory, read-only order lookup, and internal support notes.",

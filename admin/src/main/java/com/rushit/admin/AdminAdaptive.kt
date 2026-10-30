@@ -21,8 +21,11 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Window-size driven layout tokens. Breakpoints follow Material window size classes
- * (compact < 600dp, medium 600–839dp, expanded ≥ 840dp) using the actual window
- * width rather than a device or orientation flag.
+ * (compact < 600dp, medium 600–839dp, expanded ≥ 840dp).
+ *
+ * [rememberAdminWindow] reads the full window for navigation chrome.
+ * [AdminWindow.forContentWidth] recomputes KPI/form/list columns from the
+ * remaining content pane after the rail or sidebar is subtracted.
  */
 enum class AdminNavLayout {
     BottomBar,
@@ -37,6 +40,8 @@ data class AdminWindow(
     val navLayout: AdminNavLayout,
     val kpiColumns: Int,
     val formColumns: Int,
+    val listColumns: Int,
+    val detailColumns: Int,
     val listIsTable: Boolean,
     val isLandscape: Boolean,
     val isCompactHeight: Boolean,
@@ -48,21 +53,7 @@ data class AdminWindow(
     val isExpanded: Boolean get() = navLayout == AdminNavLayout.Sidebar
 }
 
-val LocalAdminWindow = staticCompositionLocalOf {
-    AdminWindow(
-        widthDp = 360,
-        heightDp = 800,
-        navLayout = AdminNavLayout.BottomBar,
-        kpiColumns = 2,
-        formColumns = 1,
-        listIsTable = false,
-        isLandscape = false,
-        isCompactHeight = false,
-        contentMaxWidth = Dp.Unspecified,
-        pagePadding = 18.dp,
-        sectionSpacing = 14.dp,
-    )
-}
+val LocalAdminWindow = staticCompositionLocalOf { adminWindowFor(360, 800) }
 
 fun adminNavLayoutFor(widthDp: Int): AdminNavLayout = when {
     widthDp >= 840 -> AdminNavLayout.Sidebar
@@ -71,38 +62,59 @@ fun adminNavLayoutFor(widthDp: Int): AdminNavLayout = when {
 }
 
 fun adminKpiColumnsFor(widthDp: Int): Int = when {
-    widthDp >= 1100 -> 3
+    widthDp >= 900 -> 3
     widthDp >= 360 -> 2
     else -> 1
 }
 
-fun adminFormColumnsFor(widthDp: Int): Int = if (widthDp >= 700) 2 else 1
+fun adminFormColumnsFor(widthDp: Int): Int = if (widthDp >= 640) 2 else 1
+
+fun adminListColumnsFor(widthDp: Int): Int = when {
+    widthDp >= 1100 -> 3
+    widthDp >= 640 -> 2
+    else -> 1
+}
+
+fun adminDetailColumnsFor(widthDp: Int): Int = if (widthDp >= 700) 2 else 1
+
+fun adminPagePaddingFor(widthDp: Int): Dp = when {
+    widthDp < 340 -> 12.dp
+    widthDp >= 840 -> 24.dp
+    else -> 18.dp
+}
+
+fun adminContentMaxWidthFor(widthDp: Int): Dp = when {
+    widthDp >= 1200 -> 1080.dp
+    widthDp >= 960 -> 920.dp
+    else -> Dp.Unspecified
+}
+
+fun adminWindowFor(widthDp: Int, heightDp: Int, navLayout: AdminNavLayout = adminNavLayoutFor(widthDp)): AdminWindow =
+    AdminWindow(
+        widthDp = widthDp,
+        heightDp = heightDp,
+        navLayout = navLayout,
+        kpiColumns = adminKpiColumnsFor(widthDp),
+        formColumns = adminFormColumnsFor(widthDp),
+        listColumns = adminListColumnsFor(widthDp),
+        detailColumns = adminDetailColumnsFor(widthDp),
+        listIsTable = widthDp >= 840,
+        isLandscape = widthDp > heightDp,
+        isCompactHeight = heightDp < 500,
+        contentMaxWidth = adminContentMaxWidthFor(widthDp),
+        pagePadding = adminPagePaddingFor(widthDp),
+        sectionSpacing = if (heightDp < 500) 10.dp else 14.dp,
+    )
+
+fun AdminWindow.forContentWidth(contentWidthDp: Int, contentHeightDp: Int = heightDp): AdminWindow =
+    adminWindowFor(contentWidthDp, contentHeightDp, navLayout = navLayout)
 
 @Composable
 fun rememberAdminWindow(): AdminWindow {
     val configuration = LocalConfiguration.current
     val width = configuration.screenWidthDp
     val height = configuration.screenHeightDp
-    return remember(width, height) {
-        val layout = adminNavLayoutFor(width)
-        AdminWindow(
-            widthDp = width,
-            heightDp = height,
-            navLayout = layout,
-            kpiColumns = adminKpiColumnsFor(width),
-            formColumns = adminFormColumnsFor(width),
-            listIsTable = width >= 840,
-            isLandscape = width > height,
-            isCompactHeight = height < 500,
-            contentMaxWidth = when {
-                width >= 1200 -> 1120.dp
-                layout == AdminNavLayout.Sidebar -> 1000.dp
-                else -> Dp.Unspecified
-            },
-            pagePadding = if (width >= 840) 24.dp else 18.dp,
-            sectionSpacing = if (height < 500) 10.dp else 14.dp,
-        )
-    }
+    return remember(width, height) { adminWindowFor(width, height) }
 }
 
 @Composable
@@ -120,6 +132,33 @@ fun AdaptiveContent(
             else Modifier.widthIn(max = maxWidth).fillMaxWidth(),
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+fun AdaptiveTwoPane(
+    modifier: Modifier = Modifier,
+    enabled: Boolean = LocalAdminWindow.current.detailColumns > 1,
+    startWeight: Float = 1.15f,
+    endWeight: Float = 1f,
+    spacing: Dp = 12.dp,
+    start: @Composable () -> Unit,
+    end: @Composable () -> Unit,
+) {
+    if (enabled) {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(Modifier.weight(startWeight)) { start() }
+            Box(Modifier.weight(endWeight)) { end() }
+        }
+    } else {
+        Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(spacing)) {
+            start()
+            end()
         }
     }
 }

@@ -91,15 +91,72 @@ class AdminLogicTest {
 
     @Test
     fun windowBreakpointsFollowMaterialWidthClasses() {
+        assertEquals(AdminNavLayout.BottomBar, adminNavLayoutFor(320))
         assertEquals(AdminNavLayout.BottomBar, adminNavLayoutFor(360))
-        assertEquals(AdminNavLayout.Rail, adminNavLayoutFor(800))
-        assertEquals(AdminNavLayout.Rail, adminNavLayoutFor(600))
-        assertEquals(AdminNavLayout.Sidebar, adminNavLayoutFor(840))
-        assertEquals(AdminNavLayout.Sidebar, adminNavLayoutFor(1280))
         assertEquals(AdminNavLayout.BottomBar, adminNavLayoutFor(599))
-        assertEquals(2, adminKpiColumnsFor(400))
-        assertEquals(3, adminKpiColumnsFor(1100))
+        assertEquals(AdminNavLayout.Rail, adminNavLayoutFor(600))
+        assertEquals(AdminNavLayout.Rail, adminNavLayoutFor(839))
+        assertEquals(AdminNavLayout.Sidebar, adminNavLayoutFor(840))
+        assertEquals(AdminNavLayout.Sidebar, adminNavLayoutFor(1024))
+        assertEquals(AdminNavLayout.Sidebar, adminNavLayoutFor(1280))
+    }
+
+    @Test
+    fun adaptiveColumnsFollowContentWidth() {
+        assertEquals(1, adminKpiColumnsFor(320))
+        assertEquals(2, adminKpiColumnsFor(360))
+        assertEquals(2, adminKpiColumnsFor(720))
+        assertEquals(3, adminKpiColumnsFor(900))
         assertEquals(1, adminFormColumnsFor(360))
-        assertEquals(2, adminFormColumnsFor(720))
+        assertEquals(1, adminFormColumnsFor(639))
+        assertEquals(2, adminFormColumnsFor(640))
+        assertEquals(1, adminListColumnsFor(360))
+        assertEquals(2, adminListColumnsFor(640))
+        assertEquals(3, adminListColumnsFor(1100))
+        assertEquals(1, adminDetailColumnsFor(360))
+        assertEquals(2, adminDetailColumnsFor(700))
+        val compact = adminWindowFor(320, 640)
+        assertEquals(AdminNavLayout.BottomBar, compact.navLayout)
+        assertEquals(1, compact.kpiColumns)
+        assertEquals(1, compact.listColumns)
+        val afterSidebar = adminWindowFor(840, 800).forContentWidth(592, 800)
+        assertEquals(AdminNavLayout.Sidebar, afterSidebar.navLayout)
+        assertEquals(2, afterSidebar.kpiColumns)
+        assertEquals(1, afterSidebar.formColumns)
+        assertEquals(1, afterSidebar.listColumns)
+    }
+
+    @Test
+    fun restrictedRolesCannotOpenUnauthorizedDestinations() {
+        val catalog = AdminRoleSpec.CATALOG_MANAGER.permissions
+        assertTrue(catalog.allowsDestination(AdminRoutes.CATALOG))
+        assertTrue(catalog.allowsDestination(AdminRoutes.PRODUCT_EDIT_INDEX))
+        assertFalse(catalog.allowsDestination(AdminRoutes.ORDERS))
+        assertFalse(catalog.allowsDestination(AdminRoutes.CUSTOMERS))
+        assertFalse(catalog.allowsDestination(AdminRoutes.SETTINGS))
+        assertTrue(catalog.allowsDestination(AdminRoutes.MORE))
+
+        val support = AdminRoleSpec.SUPPORT_AGENT.permissions
+        assertTrue(support.allowsDestination(AdminRoutes.CUSTOMERS))
+        assertTrue(support.allowsDestination(AdminRoutes.ORDERS))
+        assertFalse(support.allowsDestination(AdminRoutes.CATALOG))
+        assertFalse(support.allowsDestination(AdminRoutes.FESTIVALS))
+        assertFalse(support.allowsDestination(AdminRoutes.OFFERS))
+
+        val content = AdminRoleSpec.CONTENT_MANAGER.permissions
+        assertTrue(content.allowsDestination(AdminRoutes.THEMES))
+        assertTrue(content.allowsDestination(AdminRoutes.DESIGNER))
+        assertFalse(content.allowsDestination(AdminRoutes.ORDERS))
+    }
+
+    @Test
+    fun contentWidthKeepsChromeLayoutFromFullWindow() {
+        val full = adminWindowFor(1280, 800)
+        assertEquals(AdminNavLayout.Sidebar, full.navLayout)
+        val content = full.forContentWidth(1032, 800)
+        assertEquals(AdminNavLayout.Sidebar, content.navLayout)
+        assertEquals(3, content.kpiColumns)
+        assertEquals(2, content.formColumns)
+        assertEquals(2, content.listColumns)
     }
 }

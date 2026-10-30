@@ -21,12 +21,16 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -77,9 +81,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 
 val LocalAdminNavigation = staticCompositionLocalOf<NavHostController?> { null }
@@ -182,6 +188,7 @@ fun FloatingAdminBottomBar(
                     Column(
                         modifier = Modifier
                             .weight(1f)
+                            .defaultMinSize(minHeight = 48.dp)
                             .clip(RoundedCornerShape(18.dp))
                             .selectable(
                                 selected = selected,
@@ -855,11 +862,12 @@ fun ScreenHeader(
     val showBack = backAction != null || (route != null && route !in setOf("home", "catalog", "orders", "themes", "more", "login", "splash"))
     val themeConfig = LocalAdminThemeConfig.current
     val brand = themeConfig.activePrimary
+    val compact = LocalAdminWindow.current.isCompactHeight
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp, bottom = 8.dp),
+            .padding(top = if (compact) 6.dp else 12.dp, bottom = if (compact) 4.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showBack) {
@@ -989,19 +997,20 @@ fun SectionTitle(
 
 @Composable
 fun DataRow(
-    glyph: String,
+    glyph: String = "",
     title: String,
     detail: String,
     onClick: (() -> Unit)? = null,
     icon: ImageVector? = null,
     trailingBadge: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val themeConfig = LocalAdminThemeConfig.current
     val brand = themeConfig.activePrimary
     val brandSoft = themeConfig.activePrimarySoft
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (onClick != null) {
@@ -1011,7 +1020,8 @@ fun DataRow(
                 } else {
                     Modifier
                 }
-            ),
+            )
+            .semantics { if (onClick != null) contentDescription = "$title. $detail" },
         shape = RoundedCornerShape(themeConfig.cardCornerRadius),
         color = AdminColorScheme.surface,
         border = BorderStroke(1.dp, AdminColorScheme.divider),
@@ -1197,8 +1207,13 @@ fun AdminDialog(
     val brand = LocalAdminThemeConfig.current.activePrimary
     val actionColor = if (isDestructive) AdminColorScheme.error else brand
 
+    val maxDialogHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier
+            .fillMaxWidth(0.94f)
+            .widthIn(min = 280.dp, max = 560.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         shape = AdminShapes.dialog,
         containerColor = AdminColorScheme.surface,
         tonalElevation = 0.dp,
@@ -1213,7 +1228,12 @@ fun AdminDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = maxDialogHeight)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (!message.isNullOrBlank()) {
                     Text(
                         text = message,

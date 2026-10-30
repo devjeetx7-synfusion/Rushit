@@ -3,6 +3,7 @@ package com.rushit.admin
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -16,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -75,12 +77,8 @@ import kotlinx.coroutines.delay
 
 class AdminActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(255, 253, 247)
-        window.navigationBarColor = android.graphics.Color.rgb(255, 253, 247)
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility =
-            android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         setContent { AdminRoot() }
     }
 }
@@ -136,7 +134,7 @@ private fun AdminRoot() {
     var settingsVersion by remember { mutableIntStateOf(0) }
     var homeDraftDirty by rememberSaveable { mutableStateOf(false) }
     var homeDraftRevision by remember { mutableIntStateOf(0) }
-    var pendingDesignerDestination by remember { mutableStateOf<String?>(null) }
+    var pendingDesignerDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var snackbar by remember { mutableStateOf("") }
     val snackbarState = remember { SnackbarHostState() }
     LaunchedEffect(snackbar) { if (snackbar.isNotBlank()) { snackbarState.showSnackbar(snackbar); snackbar = "" } }
@@ -267,6 +265,13 @@ private fun AdminRoot() {
                             .weight(1f)
                             .fillMaxHeight(),
                     ) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val contentWidth = maxWidth.value.toInt().coerceAtLeast(1)
+                    val contentHeight = maxHeight.value.toInt().coerceAtLeast(1)
+                    val contentWindow = remember(window.navLayout, contentWidth, contentHeight) {
+                        window.forContentWidth(contentWidth, contentHeight)
+                    }
+                    CompositionLocalProvider(LocalAdminWindow provides contentWindow) {
                 NavHost(navController = nav, startDestination = "splash", modifier = Modifier.fillMaxSize().imePadding()) {
                     composable("splash") {
                         SplashScreen(onFinish = {
@@ -704,6 +709,8 @@ private fun AdminRoot() {
                         onDismiss = { pendingDesignerDestination = null },
                     )
                 }
+                    }
+                    }
                     }
                 }
             }

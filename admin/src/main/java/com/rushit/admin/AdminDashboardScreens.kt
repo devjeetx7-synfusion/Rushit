@@ -151,7 +151,7 @@ fun DashboardScreen(
                 Triple("In Progress", inProgressCount.toString(), "Active fulfillment") to (AdminIcons.Clock to AdminColorScheme.warning),
                 Triple("Products", products.size.toString(), "Local catalog") to (AdminIcons.Package to AdminColorScheme.info),
                 Triple("Delivered", deliveredCount.toString(), "Completed demo orders") to (AdminIcons.Check to AdminColorScheme.success),
-                Triple("Customers", customerCount.toString(), "Illustrative demo list") to (AdminIcons.Users to Color(0xFF7C4DFF)),
+                Triple("Customers", customerCount.toString(), "Illustrative demo list") to (AdminIcons.Users to AdminColorScheme.secondary),
                 Triple("Attention", lowStockProducts.size.toString(), "Low / out of stock") to (AdminIcons.AlertTriangle to AdminColorScheme.error),
             )
             val softFor = mapOf(
@@ -159,7 +159,7 @@ fun DashboardScreen(
                 AdminColorScheme.warning to AdminColorScheme.warningSoft,
                 AdminColorScheme.info to AdminColorScheme.infoSoft,
                 AdminColorScheme.success to AdminColorScheme.successSoft,
-                Color(0xFF7C4DFF) to Color(0xFFF2EEFF),
+                AdminColorScheme.secondary to AdminColorScheme.primarySoft,
                 AdminColorScheme.error to AdminColorScheme.errorSoft,
             )
             val destinations = listOf("orders", "orders", "catalog", "orders", "customers", "catalog")
@@ -561,62 +561,30 @@ fun CatalogScreen(
                     }
                 }
             }
-            items(filtered, key = { it.index }) { indexed ->
-                val record = visibleProductRecord(indexed.value)
-                val metadata = productMetadata(indexed.value)
-                val name = record.substringBefore(" · ")
-                val status = record.split(" · ").getOrNull(2).orEmpty()
-                val hidden = record.contains("Hidden", true)
-                val checked = indexed.index in selected
-                AdminSurfaceCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (canManage) {
-                            AdminCheckbox(checked, {
-                                selected = if (it) selected + indexed.index else selected - indexed.index
-                            })
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AdminColorScheme.primarySoft),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(AdminIcons.Package, null, Modifier.size(20.dp), brand)
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val supplemental = listOfNotNull(
-                                record.substringAfter(" · ", "").substringBefore(" · ").takeIf { it.isNotBlank() },
-                                metadata.salePrice.takeIf { it.isNotBlank() }?.let { "Sale ₹$it" },
-                                metadata.sku.takeIf { it.isNotBlank() }?.let { "SKU $it" },
-                            ).joinToString(" · ")
-                            Text(supplemental, color = AdminColorScheme.secondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (metadata.description.isNotBlank()) {
-                                Text(metadata.description, color = AdminColorScheme.secondaryText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                        StatusChip(if (hidden) "Hidden" else status)
-                    }
-                    if (canManage) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { onEdit(indexed.index) }) {
-                                Text("Edit", color = brand, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                            }
-                            TextButton(onClick = { onDuplicate(indexed.index) }) {
-                                Text("Duplicate", color = AdminColorScheme.primaryText, fontSize = 12.5.sp)
-                            }
-                            TextButton(onClick = { onToggleVisibility(indexed.index) }) {
-                                Text(if (hidden) "Show" else "Hide", fontSize = 12.5.sp)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { deleteTarget = indexed.index to name }) {
-                                Text("Delete", color = AdminColorScheme.error, fontSize = 12.5.sp)
-                            }
+            items(
+                filtered.chunked(window.listColumns.coerceAtLeast(1)),
+                key = { row -> row.joinToString("-") { it.index.toString() } },
+            ) { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { indexed ->
+                        Box(Modifier.weight(1f)) {
+                            CatalogProductCard(
+                                record = visibleProductRecord(indexed.value),
+                                metadata = productMetadata(indexed.value),
+                                canManage = canManage,
+                                selected = indexed.index in selected,
+                                brand = brand,
+                                onSelect = {
+                                    selected = if (it) selected + indexed.index else selected - indexed.index
+                                },
+                                onEdit = { onEdit(indexed.index) },
+                                onDuplicate = { onDuplicate(indexed.index) },
+                                onToggleVisibility = { onToggleVisibility(indexed.index) },
+                                onDelete = { name -> deleteTarget = indexed.index to name },
+                            )
                         }
                     }
+                    repeat(window.listColumns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -648,6 +616,72 @@ fun CatalogScreen(
 }
 
 @Composable
+private fun CatalogProductCard(
+    record: String,
+    metadata: ProductMetadata,
+    canManage: Boolean,
+    selected: Boolean,
+    brand: Color,
+    onSelect: (Boolean) -> Unit,
+    onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onToggleVisibility: () -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val name = record.substringBefore(" · ")
+    val status = record.split(" · ").getOrNull(2).orEmpty()
+    val hidden = record.contains("Hidden", true)
+    AdminSurfaceCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (canManage) {
+                AdminCheckbox(selected, onSelect)
+                Spacer(Modifier.width(4.dp))
+            }
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AdminColorScheme.primarySoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(AdminIcons.Package, contentDescription = null, modifier = Modifier.size(20.dp), tint = brand)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val supplemental = listOfNotNull(
+                    record.substringAfter(" · ", "").substringBefore(" · ").takeIf { it.isNotBlank() },
+                    metadata.salePrice.takeIf { it.isNotBlank() }?.let { "Sale ₹$it" },
+                    metadata.sku.takeIf { it.isNotBlank() }?.let { "SKU $it" },
+                ).joinToString(" · ")
+                Text(supplemental, color = AdminColorScheme.secondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (metadata.description.isNotBlank()) {
+                    Text(metadata.description, color = AdminColorScheme.secondaryText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            StatusChip(if (hidden) "Hidden" else status)
+        }
+        if (canManage) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onEdit) {
+                    Text("Edit", color = brand, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                }
+                TextButton(onClick = onDuplicate) {
+                    Text("Duplicate", color = AdminColorScheme.primaryText, fontSize = 12.5.sp)
+                }
+                TextButton(onClick = onToggleVisibility) {
+                    Text(if (hidden) "Show" else "Hide", fontSize = 12.5.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { onDelete(name) }) {
+                    Text("Delete", color = AdminColorScheme.error, fontSize = 12.5.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun OrdersScreen(orders: List<String>, onOpen: (Int) -> Unit, onOpenRoles: () -> Unit) {
     val permissions = LocalAdminPermissions.current
     var search by rememberSaveable { mutableStateOf("") }
@@ -659,6 +693,7 @@ fun OrdersScreen(orders: List<String>, onOpen: (Int) -> Unit, onOpenRoles: () ->
             }
         }
     }
+    val window = LocalAdminWindow.current
     Column(Modifier.fillMaxSize().adminPageInsets()) {
         ScreenHeader("Orders", "${orders.size} local demo orders")
         if (!permissions.canViewOrders) {
@@ -683,15 +718,23 @@ fun OrdersScreen(orders: List<String>, onOpen: (Int) -> Unit, onOpenRoles: () ->
             if (filtered.isEmpty()) {
                 item { EmptyState("No matching orders", "Try another search or order status.", "Clear filters") { search = ""; filter = "All" } }
             }
-            items(filtered, key = { it.index }) { indexed ->
-                DataRow(
-                    glyph = "#",
-                    title = extractOrderId(indexed.value),
-                    detail = "${extractOrderCustomer(indexed.value)} · ₹${extractOrderAmount(indexed.value)}",
-                    onClick = { onOpen(indexed.index) },
-                    icon = AdminIcons.Orders,
-                    trailingBadge = extractOrderStatus(indexed.value),
-                )
+            items(
+                filtered.chunked(window.listColumns.coerceAtLeast(1)),
+                key = { row -> row.joinToString("-") { it.index.toString() } },
+            ) { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { indexed ->
+                        DataRow(
+                            title = extractOrderId(indexed.value),
+                            detail = "${extractOrderCustomer(indexed.value)} · ₹${extractOrderAmount(indexed.value)}",
+                            onClick = { onOpen(indexed.index) },
+                            icon = AdminIcons.Orders,
+                            trailingBadge = extractOrderStatus(indexed.value),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(window.listColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }
@@ -727,89 +770,94 @@ fun OrderDetailScreen(
             item { RoleAccessBanner(permissions.roleName, "Manage Orders", onOpenRoles) }
         }
         item {
-            AdminSurfaceCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Customer", fontWeight = FontWeight.Bold)
-                        Text(extractOrderCustomer(order).ifBlank { "Customer name unavailable" }, color = AdminColorScheme.secondaryText)
-                        Text("Contact and delivery address are not present in this sample order.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+            AdaptiveTwoPane(
+                start = {
+                    AdminSurfaceCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Customer", fontWeight = FontWeight.Bold)
+                                Text(extractOrderCustomer(order).ifBlank { "Customer name unavailable" }, color = AdminColorScheme.secondaryText)
+                                Text("Contact and delivery address are not present in this sample order.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                            }
+                            StatusChip(status)
+                        }
                     }
-                    StatusChip(status)
-                }
-            }
+                },
+                end = {
+                    AdminSurfaceCard {
+                        Text("Order total", fontWeight = FontWeight.Bold)
+                        Text("₹$amount", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("Line items, quantities, fees and price breakdown are not included in this demo record.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Payment status", fontWeight = FontWeight.Bold)
+                        StatusChip("Not supplied · unknown")
+                        Text("No payment confirmation or refund operation is available in this demo.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                    }
+                },
+            )
         }
         item {
-            AdminSurfaceCard {
-                Text("Order total", fontWeight = FontWeight.Bold)
-                Text("₹$amount", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Line items, quantities, fees and price breakdown are not included in this demo record.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
-            }
-        }
-        item {
-            AdminSurfaceCard {
-                Text("Payment status", fontWeight = FontWeight.Bold)
-                StatusChip("Not supplied · unknown")
-                Text("No payment confirmation or refund operation is available in this demo.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
-            }
-        }
-        item {
-            AdminSurfaceCard {
-                Text("Status timeline", fontWeight = FontWeight.Bold)
-                Text("Current recorded status · $status", color = brand, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                if (timeline.isEmpty()) {
-                    Text("The sample order originally stored only its current status. New transitions are logged locally on this device.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
-                } else {
-                    timeline.forEach { event ->
-                        val label = event.substringBefore('|')
-                        val stamp = event.substringAfter('|')
-                        Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(8.dp).clip(CircleShape).background(brand))
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text(formatActivityTimestamp(stamp.toLongOrNull() ?: 0L), color = AdminColorScheme.secondaryText, fontSize = 11.sp)
+            AdaptiveTwoPane(
+                start = {
+                    AdminSurfaceCard {
+                        Text("Status timeline", fontWeight = FontWeight.Bold)
+                        Text("Current recorded status · $status", color = brand, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        if (timeline.isEmpty()) {
+                            Text("The sample order originally stored only its current status. New transitions are logged locally on this device.", color = AdminColorScheme.secondaryText, fontSize = 12.sp)
+                        } else {
+                            timeline.forEach { event ->
+                                val label = event.substringBefore('|')
+                                val stamp = event.substringAfter('|')
+                                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(8.dp).clip(CircleShape).background(brand))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text(formatActivityTimestamp(stamp.toLongOrNull() ?: 0L), color = AdminColorScheme.secondaryText, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                        if (canManage) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                                if (next != null) {
+                                    PrimaryButton("Advance to $next", Modifier.weight(1f)) {
+                                        cancelling = false
+                                        confirmAdvance = true
+                                    }
+                                }
+                                if (canCancelOrder(status)) {
+                                    AdminSecondaryButton("Cancel order", Modifier.weight(1f), onClick = {
+                                        cancelling = true
+                                        confirmAdvance = true
+                                    })
+                                }
                             }
                         }
                     }
-                }
-                if (canManage) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        if (next != null) {
-                            PrimaryButton("Advance to $next", Modifier.weight(1f)) {
-                                cancelling = false
-                                confirmAdvance = true
-                            }
-                        }
-                        if (canCancelOrder(status)) {
-                            AdminSecondaryButton("Cancel order", Modifier.weight(1f), onClick = {
-                                cancelling = true
-                                confirmAdvance = true
-                            })
+                },
+                end = {
+                    AdminSurfaceCard {
+                        Text("Internal notes", fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = draftNote,
+                            onValueChange = { draftNote = it.take(240) },
+                            modifier = Modifier.fillMaxWidth().height(110.dp),
+                            label = { Text("Fulfillment note · local only") },
+                            shape = AdminShapes.input,
+                            enabled = canManage,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = brand,
+                                unfocusedBorderColor = AdminColorScheme.divider,
+                                cursorColor = brand,
+                            ),
+                        )
+                        if (canManage) {
+                            PrimaryButton("Save note", Modifier.fillMaxWidth()) { onSaveNote(draftNote.trim()) }
                         }
                     }
-                }
-            }
-        }
-        item {
-            AdminSurfaceCard {
-                Text("Internal notes", fontWeight = FontWeight.Bold)
-                OutlinedTextField(
-                    value = draftNote,
-                    onValueChange = { draftNote = it.take(240) },
-                    modifier = Modifier.fillMaxWidth().height(110.dp),
-                    label = { Text("Fulfillment note · local only") },
-                    shape = AdminShapes.input,
-                    enabled = canManage,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = brand,
-                        unfocusedBorderColor = AdminColorScheme.divider,
-                        cursorColor = brand,
-                    ),
-                )
-                if (canManage) {
-                    PrimaryButton("Save note", Modifier.fillMaxWidth()) { onSaveNote(draftNote.trim()) }
-                }
-            }
+                },
+            )
         }
     }
     if (confirmAdvance) {

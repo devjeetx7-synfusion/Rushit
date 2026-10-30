@@ -100,6 +100,7 @@ fun ThemeScreen(
         draftTypeScale = config.typographyScale
     }
 
+    AdaptiveContent(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize().adminPageInsets(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -244,12 +245,14 @@ fun ThemeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
 fun MoreScreen(onOpen: (String) -> Unit, currentRole: String) {
     val permissions = LocalAdminPermissions.current
     val destinations = remember(permissions) { moreDestinations() }
+    val window = LocalAdminWindow.current
     LazyColumn(
         Modifier.fillMaxSize().adminPageInsets(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -263,16 +266,24 @@ fun MoreScreen(onOpen: (String) -> Unit, currentRole: String) {
                 Text("Client-side role preview · not server authorization", color = AdminColorScheme.secondaryText, fontSize = 11.5.sp)
             }
         }
-        items(destinations, key = { it.route }) { dest ->
-            val allowed = dest.required(permissions)
-            DataRow(
-                glyph = dest.label.take(1),
-                title = dest.label,
-                detail = if (allowed) dest.detail else "Restricted for $currentRole",
-                onClick = { onOpen(if (allowed) dest.route else "roles") },
-                icon = dest.icon,
-                trailingBadge = if (allowed) null else "Restricted",
-            )
+        items(
+            destinations.chunked(window.listColumns.coerceAtLeast(1)),
+            key = { row -> row.joinToString("-") { it.route } },
+        ) { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { dest ->
+                    val allowed = dest.required(permissions)
+                    DataRow(
+                        title = dest.label,
+                        detail = if (allowed) dest.detail else "Restricted for $currentRole",
+                        onClick = { onOpen(if (allowed) dest.route else "roles") },
+                        icon = dest.icon,
+                        trailingBadge = if (allowed) null else "Restricted",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(window.listColumns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }
@@ -336,7 +347,9 @@ fun DesignerScreen(
                                 dirty = true
                                 onDirtyChanged(true)
                             }
-                        }) { Text("↑") }
+                        }) {
+                            Icon(AdminIcons.ArrowUp, contentDescription = "Move section up", tint = AdminColorScheme.primaryText, modifier = Modifier.size(18.dp))
+                        }
                         TextButton(onClick = {
                             if (index in 0 until sections.lastIndex) {
                                 val moved = sections.removeAt(index)
@@ -344,7 +357,9 @@ fun DesignerScreen(
                                 dirty = true
                                 onDirtyChanged(true)
                             }
-                        }) { Text("↓") }
+                        }) {
+                            Icon(AdminIcons.ArrowDown, contentDescription = "Move section down", tint = AdminColorScheme.primaryText, modifier = Modifier.size(18.dp))
+                        }
                         TextButton(onClick = { deleteTarget = index to config.title }) { Text("Delete", color = AdminColorScheme.error) }
                     }
                 }
