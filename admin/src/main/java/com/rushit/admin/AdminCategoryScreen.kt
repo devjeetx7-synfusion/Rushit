@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun CategoryManagementScreen(
@@ -37,7 +39,12 @@ fun CategoryManagementScreen(
     var showEditor by remember { mutableStateOf(false) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var draft by remember { mutableStateOf("") }
+    var editorError by remember { mutableStateOf("") }
     var deleteIndex by remember { mutableStateOf<Int?>(null) }
+    var search by remember { mutableStateOf("") }
+    var alphabetical by remember { mutableStateOf(true) }
+    val visibleCategories = categories.withIndex().filter { it.value.substringBefore('|').contains(search, true) }
+        .let { if (alphabetical) it.sortedBy { indexed -> indexed.value.substringBefore('|').lowercase() } else it }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 18.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -45,7 +52,15 @@ fun CategoryManagementScreen(
     ) {
         item { ScreenHeader("Categories", "${categories.size} demo categories") }
         item { DemoNotice() }
-        itemsIndexed(categories.toList()) { index, item ->
+        item { OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("Search categories") }, singleLine = true) }
+        item { Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(alphabetical, { alphabetical = true }, label = { Text("A–Z") })
+            Spacer(Modifier.width(6.dp))
+            FilterChip(!alphabetical, { alphabetical = false }, label = { Text("Manual order") })
+        } }
+        itemsIndexed(visibleCategories, key = { _, indexed -> "${indexed.index}:${indexed.value}" }) { _, indexed ->
+            val index = indexed.index
+            val item = indexed.value
             val name = item.substringBefore('|')
             val visible = item.endsWith("Visible")
             val count = products.count { it.split(" · ").getOrNull(3) == name }
@@ -56,11 +71,12 @@ fun CategoryManagementScreen(
                     Column(Modifier.weight(1f)) {
                         Text(name, fontWeight = FontWeight.SemiBold)
                         Text("$count products · ${if (visible) "Visible" else "Hidden"}", color = AppColors.muted)
+                        if (count > 0) Text("Reassign these products before deleting this category.", color = AppColors.warning, fontSize = 11.sp)
                     }
                     Switch(visible, onCheckedChange = { checked -> categories[index] = "$name|${if (checked) "Visible" else "Hidden"}"; onSave("Category visibility updated locally") })
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { draft = name; editIndex = index; showEditor = true }) { Text("Edit") }
+                    TextButton(onClick = { draft = name; editIndex = index; editorError = ""; showEditor = true }) { Text("Edit") }
                     TextButton(onClick = { if (index > 0) { val moved = categories.removeAt(index); categories.add(index - 1, moved); onSave("Category order saved") } }) { Text("↑") }
                     TextButton(onClick = { if (index < categories.lastIndex) { val moved = categories.removeAt(index); categories.add(index + 1, moved); onSave("Category order saved") } }) { Text("↓") }
                     Spacer(Modifier.weight(1f))
@@ -68,15 +84,23 @@ fun CategoryManagementScreen(
                 }
             }
         }
-        item { OutlinedButton(onClick = { draft = ""; editIndex = null; showEditor = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Add Category") } }
+        item { OutlinedButton(onClick = { draft = ""; editIndex = null; editorError = ""; showEditor = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ Add Category") } }
     }
     if (showEditor) AlertDialog(
         onDismissRequest = { showEditor = false },
         title = { Text(if (editIndex == null) "Add category" else "Edit category") },
-        text = { OutlinedTextField(draft, { draft = it }, label = { Text("Category name") }, singleLine = true) },
+        text = { Column {
+            OutlinedTextField(draft, { draft = it.take(40) }, label = { Text("Category name") }, singleLine = true)
+            if (editorError.isNotBlank()) Text(editorError, color = AppColors.error)
+        } },
         confirmButton = { TextButton(onClick = {
-            val clean = draft.trim()
-            if (clean.isNotBlank() && categories.none { it.substringBefore('|').equals(clean, true) && (editIndex == null || categories.indexOf(it) != editIndex) }) {
+            val clean = draft.trim().replace('|', ' ').replace("##", " ")
+            editorError = when {
+                clean.isBlank() -> "Enter a category name."
+                categories.any { it.substringBefore('|').equals(clean, true) && (editIndex == null || categories.indexOf(it) != editIndex) } -> "A category with that name already exists."
+                else -> ""
+            }
+            if (editorError.isBlank()) {
                 val index = editIndex
                 if (index == null) categories.add("$clean|Visible") else {
                     val oldName = categories[index].substringBefore('|')
