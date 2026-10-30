@@ -30,6 +30,9 @@ data class OrderUiState(
     val order: Order? = null,
     val loading: Boolean = false,
     val placing: Boolean = false,
+    val transitioning: Boolean = false,
+    val ordersLoading: Boolean = false,
+    val ordersError: String? = null,
     val error: String? = null,
     val transitionError: String? = null,
     /** True only immediately after a successful placement, to play the confirmation once. */
@@ -57,13 +60,25 @@ class OrderViewModel internal constructor(
     private val _state = MutableStateFlow(OrderUiState())
     val state = _state.asStateFlow()
     private var demoJob: Job? = null
+    private var placementHandled = false
+    private var openRequest = 0
+
+    /** Consume navigation/audio once per successful placement, including across recreation. */
+    fun consumePlacement(id: String): Boolean {
+        if (placementHandled || !_state.value.justPlaced || _state.value.order?.id != id) return false
+        placementHandled = true
+        return true
+    }
 
     /** Fresh checkout session: clears the previous order view without touching stored orders. */
     fun beginCheckout() {
+        if (_state.value.placing) return
+        openRequest++
+        placementHandled = false
         demoJob?.cancel()
         demoJob = null
         _state.update {
-            it.copy(order = null, justPlaced = false, celebrationPlayed = false, error = null, transitionError = null, demoAutoPlay = false, riderAssigned = false)
+            it.copy(order = null, loading = false, justPlaced = false, celebrationPlayed = false, error = null, transitionError = null, demoAutoPlay = false, riderAssigned = false)
         }
     }
 
@@ -102,9 +117,13 @@ class OrderViewModel internal constructor(
     /** Reopens a stored order at its last persisted status; never replays the celebration. */
     fun open(orderId: String) {
         if (_state.value.order?.id == orderId) return
-        _state.update { it.copy(loading = true, error = null) }
+        demoJob?.cancel()
+        demoJob = null
+        val request = ++openRequest
+        _state.update { it.copy(loading = true, error = null, transitionError = null, order = null, demoAutoPlay = false, riderAssigned = false, justPlaced = false) }
         viewModelScope.launch {
             val result = runCatching { repository.order(orderId) }
+            if (request != openRequest) return@launch
             result.fold(
                 onSuccess = { order ->
                     _state.update {
@@ -127,9 +146,17 @@ class OrderViewModel internal constructor(
 
     /** Loads stored orders for the Orders list and the tracking entry point. */
     fun refreshOrders() {
+        if (_state.value.ordersLoading) return
+        _state.update { it.copy(ordersLoading = true, ordersError = null) }
         viewModelScope.launch {
-            val stored = runCatching { repository.orders() }.getOrDefault(emptyList())
-            _state.update { it.copy(orders = stored) }
+            try {
+                val stored = repository.orders()
+                _state.update { it.copy(orders = stored, ordersLoading = false, ordersError = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.update { it.copy(ordersLoading = false, ordersError = "Couldn't load orders stored on this device.") }
+            }
         }
     }
 
@@ -153,7 +180,7 @@ class OrderViewModel internal constructor(
 
     fun cancelOrder() {
         val current = _state.value.order ?: return
-        if (!canCancel(current)) {
+        if (!current.isDemo || !canCancel(current)) {
             _state.update { it.copy(transitionError = "This order can no longer be cancelled.") }
             return
         }
@@ -161,24 +188,30 @@ class OrderViewModel internal constructor(
     }
 
     private fun applyTransition(orderId: String, next: OrderStatus) {
-        _state.update { it.copy(transitionError = null) }
+        if (_state.value.transitioning) return
+        _state.update { it.copy(transitionError = null, transitioning = true) }
         viewModelScope.launch {
             val result = try {
                 repository.updateStatus(orderId, next)
+            } catch (cancelled: CancellationException) {
+                _state.update { it.copy(transitioning = false) }
+                throw cancelled
             } catch (_: Exception) {
                 Result.failure(IllegalStateException("That status change isn't allowed."))
             }
+            _state.update { it.copy(transitioning = false) }
             result.fold(
                 onSuccess = { updated ->
                     _state.update { current ->
+                        if (current.order?.id != orderId) return@update current
                         current.copy(
                             order = updated,
-                            riderAssigned = updated.status != OrderStatus.READY_FOR_PICKUP || current.riderAssigned,
+                            riderAssigned = if (updated.status == OrderStatus.READY_FOR_PICKUP) false else current.riderAssigned,
                         )
                     }
                 },
                 onFailure = { failure ->
-                    _state.update { it.copy(transitionError = failure.message ?: "That status change isn't allowed.") }
+                    _state.update { if (it.order?.id == orderId) it.copy(transitionError = failure.message ?: "That status change isn't allowed.") else it }
                 },
             )
         }
@@ -227,7 +260,7 @@ class OrderViewModel internal constructor(
             } catch (_: Exception) {
                 Result.failure(IllegalStateException("Could not record the celebration."))
             }
-            result.onSuccess { updated -> _state.update { it.copy(order = updated) } }
+            result.onSuccess { updated -> _state.update { if (it.order?.id == order.id) it.copy(order = updated) else it } }
         }
     }
 

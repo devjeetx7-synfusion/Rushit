@@ -10,8 +10,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +42,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rushit.app.R
@@ -94,7 +98,7 @@ fun OrderConfirmedScene(order: Order, onTrack: () -> Unit, onContinueShopping: (
     val reduced = LocalReducedMotion.current
     val bagScale = remember(order.id) { Animatable(if (reduced) 1f else 0.72f) }
     val tick = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
-    val contentAlpha = remember(order.id) { Animatable(if (reduced) 1f else 0f) }
+    val contentAlpha = remember(order.id) { Animatable(1f) }
     val confetti = remember(order.id) { Animatable(0f) }
 
     LaunchedEffect(order.id, reduced) {
@@ -105,7 +109,6 @@ fun OrderConfirmedScene(order: Order, onTrack: () -> Unit, onContinueShopping: (
         bagScale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 260f))
         tick.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
         confetti.animateTo(1f, tween(1_100, easing = LinearEasing))
-        contentAlpha.animateTo(1f, tween(280))
     }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -157,9 +160,34 @@ fun OrderConfirmedScene(order: Order, onTrack: () -> Unit, onContinueShopping: (
     }
 }
 
-/** Packing scene: warm studio, conveyor, products drifting into the RushIt bag. */
+/** Grocery orders use the supplied static packing artwork; other modes retain their own art. */
 @Composable
 fun PackingScene(order: Order, status: OrderStatus) {
+    if (order.mode == ShoppingMode.GROCERY) {
+        Column(Modifier.fillMaxWidth()) {
+            Image(
+                painter = painterResource(R.drawable.order_packing),
+                contentDescription = "Groceries being packed in a paper bag on a conveyor",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(24.dp)),
+            )
+            Spacer(Modifier.height(18.dp))
+            SceneTitle(
+                if (status == OrderStatus.PENDING) "Waiting for confirmation" else "Packing your order…",
+                when (status) {
+                    OrderStatus.PENDING -> "This order is waiting for confirmation."
+                    OrderStatus.CONFIRMED -> "This order is confirmed and waiting to be packed."
+                    else -> "Your items are being packed."
+                },
+            )
+        }
+    } else {
+        OtherModePackingScene(order, status)
+    }
+}
+
+@Composable
+private fun OtherModePackingScene(order: Order, status: OrderStatus) {
     val reduced = LocalReducedMotion.current
     val products = remember(order.mode) { productsForMode(order.mode) }
     val transition = rememberInfiniteTransition(label = "packing")
@@ -210,8 +238,8 @@ fun PackingScene(order: Order, status: OrderStatus) {
         }
         Spacer(Modifier.height(18.dp))
         SceneTitle(
-            "Packing your order…",
-            if (status == OrderStatus.CONFIRMED) "Your items are being carefully packed with love." else "All items packed. Waiting for a delivery partner.",
+            if (status == OrderStatus.PENDING) "Waiting for confirmation" else "Packing your order…",
+            if (status == OrderStatus.PENDING) "This order is waiting for confirmation." else if (status == OrderStatus.CONFIRMED) "This order is confirmed and waiting to be packed." else "Your items are being packed.",
         )
     }
 }
@@ -241,7 +269,7 @@ fun FindingRiderScene() {
             }
         }
         Spacer(Modifier.height(18.dp))
-        SceneTitle("Finding your rider…", "We're matching you with the nearest delivery partner.")
+        SceneTitle("Waiting for a rider", "No delivery partner has been assigned.")
         Spacer(Modifier.height(10.dp))
         StatusPill("No partner assigned yet", color = Amber)
     }
@@ -250,26 +278,16 @@ fun FindingRiderScene() {
 /** Rider ready / assigned: scooter idling in the city. */
 @Composable
 fun RiderReadyScene(order: Order) {
-    val reduced = LocalReducedMotion.current
-    val transition = rememberInfiniteTransition(label = "idle wheels")
-    val wheel by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(2_600, easing = LinearEasing)),
-        label = "idle wheel spin",
-    )
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(24.dp))) {
-            CityBackdrop(Modifier.fillMaxSize(), travel = 0f)
-            DeliveryScooter(
-                modifier = Modifier.fillMaxWidth(0.74f).height(150.dp).align(Alignment.BottomCenter).padding(bottom = 18.dp),
-                wheelRotation = if (reduced) 0f else wheel,
-                lean = -1.5f,
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.order_rider_ready),
+            contentDescription = "Illustration of a delivery rider on a coral scooter",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().aspectRatio(781f / 602f).clip(RoundedCornerShape(24.dp)),
+        )
         Spacer(Modifier.height(16.dp))
         SceneTitle(
-            "Your rider is ready!",
+            if (order.status == OrderStatus.PICKED_UP) "Order picked up" else "Your rider is ready!",
             if (order.status == OrderStatus.PICKED_UP) "Your order has been picked up." else "Your delivery partner is preparing to pick up your order.",
         )
         Spacer(Modifier.height(14.dp))
@@ -338,17 +356,9 @@ fun OnTheWayScene(order: Order) {
 /** Approaching: scooter slows down beside the destination. */
 @Composable
 fun AlmostThereScene(order: Order) {
-    val reduced = LocalReducedMotion.current
-    val transition = rememberInfiniteTransition(label = "arriving")
-    val wheel by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 180f,
-        animationSpec = infiniteRepeatable(tween(2_200, easing = LinearEasing)),
-        label = "arriving wheels",
-    )
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(24.dp))) {
-            CityBackdrop(Modifier.fillMaxSize(), travel = if (reduced) 0f else 24f)
+            CityBackdrop(Modifier.fillMaxSize(), travel = 0f)
             // destination house
             Canvas(Modifier.fillMaxSize()) {
                 val baseX = size.width * 0.66f
@@ -365,7 +375,7 @@ fun AlmostThereScene(order: Order) {
             }
             DeliveryScooter(
                 modifier = Modifier.fillMaxWidth(0.66f).height(140.dp).align(Alignment.BottomStart).padding(start = 4.dp, bottom = 16.dp),
-                wheelRotation = if (reduced) 0f else wheel,
+                wheelRotation = 0f,
                 lean = 0f,
             )
         }
@@ -385,7 +395,7 @@ fun DeliveredScene(
     val reduced = LocalReducedMotion.current
     val tick = remember(order.id, celebrate) { Animatable(if (reduced || !celebrate) 1f else 0f) }
     val confetti = remember(order.id, celebrate) { Animatable(0f) }
-    val content = remember(order.id, celebrate) { Animatable(if (reduced) 1f else 0f) }
+    val content = remember(order.id, celebrate) { Animatable(1f) }
 
     LaunchedEffect(order.id, celebrate, reduced) {
         if (!celebrate || reduced) {
@@ -393,7 +403,6 @@ fun DeliveredScene(
         }
         tick.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
         confetti.animateTo(1f, tween(1_200, easing = LinearEasing))
-        content.animateTo(1f, tween(260))
     }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -166,11 +167,11 @@ fun CheckoutScreen(
                 RushButton(
                     text = if (orderState.placing) "Placing demo order…" else "Place Order · ${formatPrice(payable)}",
                     onClick = onPlaceOrder,
-                    enabled = products.isNotEmpty() && !orderState.placing,
+                    enabled = products.isNotEmpty() && !state.address.isNullOrBlank() && !orderState.placing,
                     loading = orderState.placing,
                 )
                 Text(
-                    "Creates a local demo order · no payment, no real delivery",
+                    if (state.address.isNullOrBlank()) "Add a delivery address to create a demo order." else "Creates a local demo order · no payment, no real delivery",
                     style = MaterialTheme.typography.bodySmall,
                     color = Muted,
                     modifier = Modifier.padding(top = 6.dp),
@@ -210,7 +211,7 @@ private fun CheckoutLine(product: Product, quantity: Int, onChangeQuantity: (Str
 @Composable
 private fun QuantityControl(icon: Int, description: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
-        Modifier.size(34.dp).clip(CircleShape)
+        Modifier.size(48.dp).clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = description, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -233,13 +234,20 @@ private fun BillLine(label: String, value: String, highlight: Boolean = false) {
 @Composable
 fun TrackingScreen(
     orders: List<com.rushit.app.data.model.Order>,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
     onBack: () -> Unit,
     onOpenOrder: (String) -> Unit,
     onShop: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(Cream)) {
         ScreenHeader("Order tracking", onBack)
-        if (orders.isEmpty()) {
+        if (loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Coral) }
+        } else if (error != null) {
+            MessageCard("Orders unavailable", error, Modifier.padding(16.dp), action = "Try again", onAction = onRetry)
+        } else if (orders.isEmpty()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 MessageCard(
                     "No orders to track",

@@ -7,6 +7,8 @@ import com.rushit.app.data.order.LocalOrderRepository
 import com.rushit.app.data.order.OrderDraft
 import com.rushit.app.data.order.OrderStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -58,6 +60,12 @@ class OrderRepositoryTest {
         assertTrue(repo.orders().isEmpty())
     }
 
+    @Test fun `orders without an address are rejected`() = runBlocking {
+        val (repo, _) = repository()
+        assertTrue(repo.placeOrder(draft().copy(addressSummary = " ")).isFailure)
+        assertTrue(repo.orders().isEmpty())
+    }
+
     @Test fun `invalid transitions are refused and leave the order untouched`() = runBlocking {
         val (repo, _) = repository()
         val order = repo.placeOrder(draft()).getOrThrow()
@@ -102,12 +110,12 @@ class OrderRepositoryTest {
         assertTrue(repo.markCelebrated("RI-does-not-exist", "now").isFailure)
     }
 
-    @Test fun `corrupt storage degrades to an empty list`() = runBlocking {
+    @Test fun `corrupt storage reports an error and is not overwritten`() = runBlocking {
         val store = MemoryStore("{not json")
         val (repo, _) = repository(store)
-        assertTrue(repo.orders().isEmpty())
-        // and it can still take a new order
-        assertTrue(repo.placeOrder(draft()).isSuccess)
+        assertTrue(runCatching { repo.orders() }.isFailure)
+        assertTrue(repo.placeOrder(draft()).isFailure)
+        assertEquals("{not json", store.value)
     }
 
     @Test fun `multiple orders keep insertion order`() = runBlocking {
@@ -118,4 +126,11 @@ class OrderRepositoryTest {
         assertEquals(listOf(second.id, first.id), stored.map { it.id })
         assertFalse(first.id == second.id)
     }
+    @Test fun `concurrent placements do not overwrite each other`() = runBlocking {
+        val (repo, _) = repository()
+        val placed = (1..20).map { async { repo.placeOrder(draft()).getOrThrow() } }.awaitAll()
+        assertEquals(20, placed.map { it.id }.toSet().size)
+        assertEquals(20, repo.orders().size)
+    }
+
 }

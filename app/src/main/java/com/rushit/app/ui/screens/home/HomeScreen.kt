@@ -86,8 +86,6 @@ import com.rushit.app.ui.theme.Motion
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.motionDuration
-import com.rushit.app.ui.studio.HomeStudioConfig
-import com.rushit.app.ui.studio.Festival
 import com.rushit.app.ui.viewmodel.ShopUiState
 import kotlinx.coroutines.delay
 
@@ -106,9 +104,8 @@ fun HomeScreen(
     onAdd: (String) -> Unit,
     onWishlist: (String) -> Unit,
     onRetry: () -> Unit,
-    previewConfig: HomeStudioConfig? = null,
+    onNotifications: () -> Unit,
 ) {
-    var showNotifications by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val categories = remember(state.categories, state.selectedMode) { categoriesForMode(state.categories, state.selectedMode) }
     val selectedCategory = remember(categories, state.selectedCategoryId) { categories.firstOrNull { it.id == state.selectedCategoryId } }
@@ -116,7 +113,7 @@ fun HomeScreen(
         productsForSelection(state.products, state.selectedMode, state.selectedCategoryId)
     }
     val sectionTitle = selectedCategory?.name ?: when (state.selectedMode) {
-        ShoppingMode.GROCERY -> previewConfig?.bottom?.groceryTitle?.takeIf { it.isNotBlank() } ?: "Bestsellers"
+        ShoppingMode.GROCERY -> "Bestsellers"
         ShoppingMode.ECOMMERCE -> "Explore examples"
         ShoppingMode.GIFTS -> "Gift collections"
     }
@@ -127,14 +124,14 @@ fun HomeScreen(
         contentPadding = PaddingValues(bottom = 18.dp),
     ) {
         item(key = "header") {
-            LocationHeader(state.address, onAddress = onAddress, onNotifications = { showNotifications = true }, onAccount = onAccount)
+            LocationHeader(state.address, onAddress = onAddress, onNotifications = onNotifications, onAccount = onAccount)
         }
         item(key = "search") {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f), previewConfig?.top?.searchPlaceholder)
+                SearchEntry(onSearch, state.selectedMode, Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
                 RoundIconButton(
                     R.drawable.ic_shopping_cart_01,
@@ -147,11 +144,7 @@ fun HomeScreen(
             }
         }
         item(key = "banner") {
-            if (previewConfig == null || previewConfig.top.festival == Festival.NORMAL) {
-                PromoBannerCarousel(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
-            } else {
-                FestivalBanner(previewConfig, onShopNow)
-            }
+            PromoBannerCarousel(state.selectedMode, onShopNow, Modifier.padding(horizontal = 16.dp))
         }
         if (state.isSample) {
             item(key = "sample") {
@@ -163,14 +156,14 @@ fun HomeScreen(
                 )
             }
         }
-        if (previewConfig?.bottom?.showModes != false) item(key = "shopping_modes") {
+        item(key = "shopping_modes") {
             ShoppingModeSwitcher(
                 selectedMode = state.selectedMode,
                 onModeSelected = onModeSelected,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
             )
         }
-        if (previewConfig?.bottom?.showCategories != false) item(key = "categories") {
+        item(key = "categories") {
             if (categories.isNotEmpty()) {
                 CategoryRail(
                     categories = categories,
@@ -180,7 +173,7 @@ fun HomeScreen(
                 )
             }
         }
-        if (previewConfig?.bottom?.showProducts != false) item(key = "section_header") {
+        item(key = "section_header") {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -217,7 +210,7 @@ fun HomeScreen(
                 )
             }
         }
-        if (previewConfig?.bottom?.showProducts != false) item(key = "products") {
+        item(key = "products") {
             ProductSection(
                 state = state,
                 onAdd = onAdd,
@@ -229,15 +222,6 @@ fun HomeScreen(
         }
     }
 
-    if (showNotifications) {
-        AlertDialog(
-            onDismissRequest = { showNotifications = false },
-            title = { Text("Notifications") },
-            text = { Text("Notifications aren't connected yet. We'll show updates here when they are available.") },
-            confirmButton = { TextButton(onClick = { showNotifications = false }) { Text("Got it") } },
-            containerColor = CardWhite,
-        )
-    }
 }
 
 @Composable
@@ -302,35 +286,6 @@ private fun SearchEntry(onClick: () -> Unit, mode: ShoppingMode, modifier: Modif
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-@Composable
-private fun FestivalBanner(config: HomeStudioConfig, onShop: () -> Unit) {
-    val top = config.top
-    val festival = top.festival
-    val reduced = LocalReducedMotion.current
-    AnimatedContent(
-        targetState = festival,
-        transitionSpec = {
-            val duration = if (reduced || !top.animate) 0 else top.durationMs
-            fadeIn(tween(duration)).togetherWith(fadeOut(tween(duration)))
-        },
-        label = "festival banner",
-        modifier = Modifier.padding(horizontal = 16.dp),
-    ) { selected ->
-        Column(
-            Modifier.fillMaxWidth().heightIn(min = 162.dp).clip(RoundedCornerShape(22.dp))
-                .background(Brush.horizontalGradient(listOf(Color(selected.color), Color(selected.color).copy(alpha = .72f))))
-                .padding(20.dp),
-        ) {
-            Text(top.heading.ifBlank { selected.heading }, style = MaterialTheme.typography.headlineMedium, color = Color.White)
-            Text(top.subtitle.ifBlank { selected.subtitle }, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-            Spacer(Modifier.height(10.dp))
-            Text(top.cta.ifBlank { "Shop Now" }, color = Color.White, style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.clip(CircleShape).background(CtaRed).clickable(role = Role.Button, onClick = onShop)
-                    .padding(horizontal = 15.dp, vertical = 10.dp))
-        }
     }
 }
 
