@@ -32,7 +32,7 @@ import org.junit.Test
  * decorative infinite animations; the motion geometry itself is covered by TravelMotionTest.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], qualifiers = "w400dp-h820dp-xhdpi")
 class OrderJourneyScreenTest {
     @get:Rule val rule = createComposeRule()
 
@@ -116,13 +116,17 @@ class OrderJourneyScreenTest {
         rule.onNodeWithText("View order details").performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun smallScreenKeepsActionsReachable() {
+    @Test
+    @Config(qualifiers = "w320dp-h820dp-xhdpi")
+    fun smallScreenKeepsActionsReachable() {
         show(OrderUiState(order = order(OrderStatus.ARRIVING)), width = 320)
         rule.onNodeWithText("Almost there!").assertIsDisplayed()
         rule.onNodeWithText("Preview next stage").performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun largeScreenKeepsActionsReachable() {
+    @Test
+    @Config(qualifiers = "w600dp-h820dp-xhdpi")
+    fun largeScreenKeepsActionsReachable() {
         show(OrderUiState(order = order(OrderStatus.OUT_FOR_DELIVERY)), width = 600)
         rule.onNodeWithText("On the way!").assertIsDisplayed()
         rule.onNodeWithText("Preview next stage").performScrollTo().assertIsDisplayed()

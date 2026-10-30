@@ -59,6 +59,11 @@ jobs:
               root = ET.parse(path).getroot()
               for key in totals:
                   totals[key] += int(root.get(key, 0))
+              for case in root.iter('testcase'):
+                  failures = list(case.iter('failure')) + list(case.iter('error'))
+                  if failures:
+                      msg = ' '.join(failures[0].get('message', '').split())[:500]
+                      print('::error title=Test failed::' + case.get('classname','') + '.' + case.get('name','') + ' :: ' + msg)
           print('::notice title=Unit tests::' + str(totals))
           report = 'app/build/reports/lint-results-debug.xml'
           try:
