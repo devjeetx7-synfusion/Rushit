@@ -69,9 +69,9 @@ Without Supabase configuration, continuing with a valid number displays an actio
 
 ## Verification and current limitations
 
-- Current changes have **not** been built or tested in the editing sandbox: no JDK or Android SDK is installed, and Gradle distribution/Google Maven access is unavailable. Run `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` in a configured environment before shipping. Existing tests and new regressions are present but have not been run for this patch.
-- The previously reported API 27 lint issue was addressed by moving `windowLightNavigationBar` into a `values-v27` resource; lint still needs to be rerun.
-- No emulator or attached device was available. Actual splash rendering, navigation, small-screen and large-text layouts, keyboard, location permission, cutouts, system bars, accessibility and screenshots remain unverified on device.
+- The order-tracking patch is validated in GitHub Actions on this branch with `:app:testDebugUnitTest :app:assembleDebug :app:lintDebug` (75 unit/Robolectric tests, 0 lint errors). The editing sandbox itself has no JDK/Android SDK, so CI is the build/test source of truth. See `docs/order-tracking-animation.md`.
+- The previously reported API 27 lint issue was addressed by moving `windowLightNavigationBar` into a `values-v27` resource; CI lint reports 0 errors.
+- Robolectric-backed Compose tests cover the tracking screen at 320dp, 400dp, and 600dp widths. A physical device is still recommended for audio policy, insets, cutouts, and perceived animation smoothness.
 - No real Supabase project/SMS provider was supplied, so end-to-end SMS delivery, session restore against a real project, and server-side policies have not been tested.
 - Catalog, wishlist, address, cart and order screens are not connected to a backend; addresses, recent searches, selected mode, wishlist and demo orders are device-local, and carts do not survive process death. Demo orders survive app restarts, but nothing is sent anywhere.
 - The delivery journey is a **demo preview**. There is no order service, rider directory, live location, ETA, payment, inventory reservation or real delivery, and the UI states that explicitly instead of inventing a rider, rating or countdown.
@@ -87,6 +87,6 @@ Without Supabase configuration, continuing with a valid number displays an actio
 
 ### Artwork and audio notes
 
-- `order_packing.webp`: supplied 1448 × 1086 opaque PNG, resized to 1200 × 900 (26,432 bytes), no crop; displayed with fit scaling. It remains static because its objects are not separate layers.
-- `order_rider_ready.webp`: 781 × 602 crop of the supplied screen's stationary rider illustration (29,906 bytes); used only for the stationary rider scene. The existing on-the-way route illustration is retained.
+- `order_packing.webp` and `order_packing_*`: the original packing illustration is separated into background, bag, and floating grocery discs so items can settle into the bag without animating a flattened image.
+- `order_rider_static/travel.webp` and `order_wheel.webp`: extracted from the supplied transparent rider board. Travel removes only the hub discs and rotates the supplied wheel around the rear/front hub pivots; the rider, bag, exhaust, and fork stay aligned. `order_travel_skyline/trees/road.webp` provide restrained parallax. The previous route-map/procedural rider was replaced because it did not match the storyboard or wheel/road requirements.
 - `order_confirmation.wav`: a 320 ms, mono, 22.05 kHz two-note sine chime synthesized locally for this project; no external sample is used. Device playback and audio policy behavior still need physical-device testing.

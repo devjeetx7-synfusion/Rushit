@@ -276,18 +276,16 @@ fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionStat
                 val h = with(density) { maxHeight.toPx() }
                 val scale = h / 183f
                 val stripW = 464f * scale
-                val distance = motion.distance.value * w
                 Box(Modifier.fillMaxSize().background(Color(0xFFEAF3F7)))
-                ParallaxStrip(R.drawable.order_travel_skyline, stripW, 0f, 120f * scale, distance * TravelParallax.SKYLINE)
-                ParallaxStrip(R.drawable.order_travel_trees, stripW, 70f * scale, 80f * scale, distance * TravelParallax.TREES)
-                ParallaxStrip(R.drawable.order_travel_road, stripW, 140f * scale, 43f * scale, distance * TravelParallax.ROAD)
+                ParallaxStrip(R.drawable.order_travel_skyline, stripW, 0f, 120f * scale) { motion.distance.value * w * TravelParallax.SKYLINE }
+                ParallaxStrip(R.drawable.order_travel_trees, stripW, 70f * scale, 80f * scale) { motion.distance.value * w * TravelParallax.TREES }
+                ParallaxStrip(R.drawable.order_travel_road, stripW, 140f * scale, 43f * scale) { motion.distance.value * w * TravelParallax.ROAD }
 
                 val riderH = h * 0.78f
                 val riderW = riderH * RiderGeometry.SOURCE_WIDTH / RiderGeometry.SOURCE_HEIGHT
                 val rx = w * 0.27f
                 val ry = h - riderH - h * 0.07f
                 val wheelR = RiderGeometry.wheelRadius(riderW)
-                val degrees = wheelDegrees(distance, wheelR)
                 val (rearX, rearY) = RiderGeometry.rearHub(riderW, riderH)
                 val (frontX, frontY) = RiderGeometry.frontHub(riderW, riderH)
                 listOf(rearX to rearY, frontX to frontY).forEach { (hx, hy) ->
@@ -297,7 +295,7 @@ fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionStat
                         painterResource(R.drawable.order_wheel), null,
                         Modifier.offset(x = with(density) { (cx - wheelR).toDp() }, y = with(density) { (cy - wheelR).toDp() })
                             .size(with(density) { (wheelR * 2f).toDp() })
-                            .graphicsLayer { rotationZ = degrees },
+                            .graphicsLayer { rotationZ = wheelDegrees(motion.distance.value * w, wheelR) },
                     )
                 }
                 Image(
@@ -323,22 +321,16 @@ fun RiderTravelScene(order: Order, scene: JourneyScene, motion: TravelMotionStat
 }
 
 @Composable
-private fun ParallaxStrip(res: Int, stripW: Float, y: Float, height: Float, offset: Float) {
+private fun ParallaxStrip(res: Int, stripW: Float, y: Float, height: Float, offsetPx: () -> Float) {
     val density = LocalDensity.current
-    val start = -(offset % stripW)
     val widthDp = with(density) { stripW.toDp() }
     val heightDp = with(density) { height.toDp() }
     val yDp = with(density) { y.toDp() }
-    Image(
-        painterResource(res), null,
-        Modifier.offset(x = with(density) { start.toDp() }, y = yDp).size(widthDp, heightDp),
-        contentScale = ContentScale.FillBounds,
-    )
-    Image(
-        painterResource(res), null,
-        Modifier.offset(x = with(density) { (start + stripW).toDp() }, y = yDp).size(widthDp, heightDp),
-        contentScale = ContentScale.FillBounds,
-    )
+    // Reading the motion inside graphicsLayer keeps per-frame updates out of composition.
+    Box(Modifier.offset(y = yDp).graphicsLayer { translationX = -(offsetPx() % stripW) }) {
+        Image(painterResource(res), null, Modifier.size(widthDp, heightDp), contentScale = ContentScale.FillBounds)
+        Image(painterResource(res), null, Modifier.offset(x = widthDp).size(widthDp, heightDp), contentScale = ContentScale.FillBounds)
+    }
 }
 
 @Composable
