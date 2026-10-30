@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private fun defaultOfferDate(offsetDays: Int): String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, offsetDays) }.time)
+
 private fun validOfferDate(value: String): Boolean = runCatching {
     val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { isLenient = false }
     format.parse(value)?.let { format.format(it) == value } == true
@@ -42,9 +44,10 @@ private fun offerStatus(fields: List<String>): String {
 }
 
 @Composable
-fun OfferManagerScreen(offers: List<String>, onAdd: () -> Unit, onEdit: (Int) -> Unit) {
+fun OfferManagerScreen(offers: List<String>, onAdd: () -> Unit, onEdit: (Int) -> Unit, onDelete: (Int) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("All") }
+    var deleteTarget by remember { mutableStateOf<Pair<Int, String>?>(null) }
     val visible = offers.withIndex().filter { (_, offer) ->
         offer.contains(query, true) && (filter == "All" || offerStatus(offer.split('|')) == filter)
     }
@@ -69,12 +72,22 @@ fun OfferManagerScreen(offers: List<String>, onAdd: () -> Unit, onEdit: (Int) ->
                 }
                 Text("Min. order ₹${fields.getOrNull(4).orEmpty()} · Limit ${fields.getOrNull(5).orEmpty()}", color = AppColors.muted, fontSize = 12.sp)
                 Text("${fields.getOrNull(6).orEmpty()} – ${fields.getOrNull(7).orEmpty()}", color = AppColors.muted, fontSize = 12.sp)
-                TextButton(onClick = { onEdit(indexed.index) }) { Text("Edit offer") }
+                Row {
+                    TextButton(onClick = { onEdit(indexed.index) }) { Text("Edit offer") }
+                    TextButton(onClick = { deleteTarget = indexed.index to fields.getOrNull(0).orEmpty() }) { Text("Delete", color = AppColors.error) }
+                }
             }
         }
         item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("＋ Create Offer") } }
         item { Text("Offers are local prototype data and are not redeemable in the customer app.", color = AppColors.muted, fontSize = 12.sp) }
     }
+    deleteTarget?.let { (index, name) -> AlertDialog(
+        onDismissRequest = { deleteTarget = null },
+        title = { Text("Delete local coupon?") },
+        text = { Text("Remove $name from this device? It is not applied by checkout or the customer app.") },
+        confirmButton = { TextButton(onClick = { onDelete(index); deleteTarget = null }) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Keep") } },
+    ) }
 }
 
 @Composable private fun OfferState(label: String) {
@@ -82,21 +95,31 @@ fun OfferManagerScreen(offers: List<String>, onAdd: () -> Unit, onEdit: (Int) ->
 }
 
 @Composable
-fun OfferEditorScreen(offer: String?, onSave: (String) -> Unit) {
+fun OfferEditorScreen(offer: String?, existingOffers: List<String>, onCancel: () -> Unit, onSave: (String) -> Unit) {
     val fields = remember(offer) { offer?.split('|').orEmpty() }
+    val initialStart = remember(offer) { fields.getOrNull(6) ?: defaultOfferDate(7) }
+    val initialEnd = remember(offer) { fields.getOrNull(7) ?: defaultOfferDate(37) }
     var name by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(0).orEmpty()) }
     var code by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(1).orEmpty()) }
     var kind by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(2) ?: "Percentage") }
     var value by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(3).orEmpty()) }
     var minimum by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(4).orEmpty()) }
     var limit by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(5).orEmpty()) }
-    var start by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(6) ?: "2026-11-01") }
-    var end by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(7) ?: "2026-12-31") }
+    var start by rememberSaveable(offer) { mutableStateOf(initialStart) }
+    var end by rememberSaveable(offer) { mutableStateOf(initialEnd) }
     var enabled by rememberSaveable(offer) { mutableStateOf(fields.getOrNull(8) != "Disabled") }
-    var error by remember { mutableStateOf("") }
+    var error by rememberSaveable(offer) { mutableStateOf("") }
     var saved by rememberSaveable(offer) { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val initialName = fields.getOrNull(0).orEmpty(); val initialCode = fields.getOrNull(1).orEmpty()
+    val initialKind = fields.getOrNull(2) ?: "Percentage"; val initialValue = fields.getOrNull(3).orEmpty()
+    val initialMinimum = fields.getOrNull(4).orEmpty(); val initialLimit = fields.getOrNull(5).orEmpty()
+    val initialEnabled = fields.getOrNull(8) != "Disabled"
+    val hasChanges = name != initialName || code != initialCode || kind != initialKind || value != initialValue || minimum != initialMinimum || limit != initialLimit || start != initialStart || end != initialEnd || enabled != initialEnabled
+    val cancel = { if (hasChanges) confirmDiscard = true else onCancel() }
+    androidx.activity.compose.BackHandler(enabled = hasChanges) { confirmDiscard = true }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { ScreenHeader(if (offer == null) "Create Offer" else "Edit Offer", "Local coupon configuration") }
+        item { ScreenHeader(if (offer == null) "Create Offer" else "Edit Offer", "Local coupon configuration", backAction = cancel) }
         item { DemoNotice() }
         item { AdminSurfaceCard {
             OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Offer name") }, singleLine = true)
@@ -123,20 +146,34 @@ fun OfferEditorScreen(offer: String?, onSave: (String) -> Unit) {
         } }
         item {
             if (error.isNotBlank()) Text(error, color = AppColors.error, fontSize = 13.sp)
-            Button(onClick = {
-                val amount = value.toIntOrNull(); val min = minimum.toIntOrNull(); val max = limit.toIntOrNull()
-                error = when {
-                    name.isBlank() -> "Offer name is required."
-                    code.isBlank() -> "Coupon code is required."
-                    amount == null || amount <= 0 || (kind == "Percentage" && amount > 100) -> "Enter a valid discount value."
-                    min == null || min < 0 -> "Minimum order must be zero or greater."
-                    max == null || max <= 0 -> "Usage limit must be greater than zero."
-                    !validOfferDate(start) || !validOfferDate(end) -> "Enter valid YYYY-MM-DD dates."
-                    end < start -> "End date must not precede start date."
-                    else -> ""
-                }
-                if (error.isBlank()) { saved = true; onSave(listOf(name.trim(), code, kind, amount.toString(), min.toString(), max.toString(), start, end, if (enabled) "Enabled" else "Disabled").joinToString("|")) }
-            }, enabled = !saved, modifier = Modifier.fillMaxWidth()) { Text("Save Offer") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedButton(onClick = cancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(onClick = {
+                    val amount = value.toIntOrNull(); val min = minimum.toIntOrNull(); val max = limit.toIntOrNull()
+                    error = when {
+                        name.isBlank() -> "Offer name is required."
+                        code.isBlank() -> "Coupon code is required."
+                        existingOffers.any { existing -> existing != offer && existing.split('|').getOrNull(1).equals(code, true) } -> "That coupon code is already used in this local list."
+                        amount == null || amount <= 0 || (kind == "Percentage" && amount > 100) -> "Enter a valid discount value."
+                        min == null || min < 0 -> "Minimum order must be zero or greater."
+                        max == null || max <= 0 -> "Usage limit must be greater than zero."
+                        !validOfferDate(start) || !validOfferDate(end) -> "Enter valid YYYY-MM-DD dates."
+                        end < start -> "End date must not precede start date."
+                        else -> ""
+                    }
+                    if (error.isBlank()) {
+                        saved = true
+                        onSave(listOf(name.trim().replace('|', ' ').replace("##", " "), code, kind, amount.toString(), min.toString(), max.toString(), start, end, if (enabled) "Enabled" else "Disabled").joinToString("|"))
+                    }
+                }, enabled = !saved, modifier = Modifier.weight(1f)) { Text("Save Offer") }
+            }
         }
     }
+    if (confirmDiscard) AlertDialog(
+        onDismissRequest = { confirmDiscard = false },
+        title = { Text("Discard coupon edits?") },
+        text = { Text("Your unsaved local coupon edits will be lost.") },
+        confirmButton = { TextButton(onClick = { confirmDiscard = false; onCancel() }) { Text("Discard") } },
+        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+    )
 }
