@@ -561,7 +561,7 @@ fun CatalogScreen(
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 8.dp, bottom = 20.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (filtered.isEmpty()) {
@@ -687,7 +687,7 @@ fun OrdersScreen(orders: List<String>, onOpen: (Int) -> Unit, onOpenRoles: () ->
             fontSize = 11.sp,
         )
         LazyColumn(
-            contentPadding = PaddingValues(vertical = 10.dp, bottom = 20.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (filtered.isEmpty()) {
