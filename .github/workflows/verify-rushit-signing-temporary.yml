@@ -1,0 +1,165 @@
+name: Verify RushIt signing change (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Verify unconfigured local defaults and run existing unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+          badging="$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk)"
+          printf '%s\n' "$badging" | grep "package: name='com.rushit.app'"
+          printf '%s\n' "$badging" | grep "versionCode='1'"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs --min-sdk-version 24 app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create one disposable signing fixture outside the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          dir="$(mktemp -d "$RUNNER_TEMP/rushit-signing-fixture.XXXXXXXX")"
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          export FIXTURE_PASSWORD="$password"
+          keytool -genkeypair -keystore "$dir/fixture.p12" -storetype PKCS12 \
+            -alias rushit-fixture -keyalg RSA -keysize 2048 -validity 2 \
+            -dname 'CN=Disposable RushIt CI fixture' \
+            -storepass:env FIXTURE_PASSWORD -keypass:env FIXTURE_PASSWORD
+          {
+            printf 'RUSHIT_TEST_KEYSTORE_PATH=%s/fixture.p12\n' "$dir"
+            printf 'RUSHIT_TEST_KEYSTORE_PASSWORD=%s\n' "$password"
+            printf 'RUSHIT_TEST_KEY_PASSWORD=%s\n' "$password"
+            echo 'RUSHIT_TEST_KEY_ALIAS=rushit-fixture'
+            printf 'FIXTURE_DIR=%s\n' "$dir"
+          } >> "$GITHUB_ENV"
+
+      - name: Reject invalid Gradle configuration without logging fixture values
+        shell: bash
+        run: |
+          set -euo pipefail
+          expect_failure() {
+            local expected="$1"; shift
+            if "$@" >"$RUNNER_TEMP/negative-check.log" 2>&1; then
+              echo '::error::An invalid Gradle configuration was unexpectedly accepted.'
+              exit 1
+            fi
+            if ! grep -Fq "$expected" "$RUNNER_TEMP/negative-check.log"; then
+              echo '::error::Gradle failed without the expected validation diagnostic.'
+              exit 1
+            fi
+          }
+          expect_failure 'RUSHIT_VERSION_CODE must be' env RUSHIT_VERSION_CODE=0 ./gradlew help --no-daemon --console=plain
+          expect_failure 'RUSHIT_VERSION_CODE must be' ./gradlew help -PRUSHIT_VERSION_CODE=2100000001 --no-daemon --console=plain
+          expect_failure 'GOOGLE_WEB_CLIENT_ID must be' env GOOGLE_WEB_CLIENT_ID=not-a-client-id ./gradlew help --no-daemon --console=plain
+          expect_failure 'Never bundle a Google OAuth client secret' env GOOGLE_CLIENT_SECRET=not-a-real-secret ./gradlew help --no-daemon --console=plain
+          expect_failure 'SUPABASE_URL must be' env SUPABASE_URL=https://example.supabase.co/auth ./gradlew help --no-daemon --console=plain
+          expect_failure 'SUPABASE_ANON_KEY must be' env SUPABASE_ANON_KEY=sb_secret_not_a_real_key ./gradlew help --no-daemon --console=plain
+          expect_failure 'Incomplete persistent test signing' env RUSHIT_TEST_KEYSTORE_PASSWORD= ./gradlew help --no-daemon --console=plain
+          service_jwt="$(python3 - <<'PY'
+          import base64
+          def segment(data): return base64.urlsafe_b64encode(data).decode().rstrip('=')
+          print('.'.join([segment(b'{"alg":"HS256"}'), segment(b'{"role":"service_role"}'), segment(b'fixture-not-a-real-signature')]))
+          PY
+          )"
+          expect_failure 'SUPABASE_ANON_KEY must be' env SUPABASE_ANON_KEY="$service_jwt" ./gradlew help --no-daemon --console=plain
+          echo 'Invalid Gradle version, public configuration and partial signing checks passed.'
+
+      - name: Build twice with one identity and increasing version codes
+        shell: bash
+        env:
+          # The existing non-working test fixture ID; no Google/Supabase credential is invented.
+          GOOGLE_WEB_CLIENT_ID: 000000000000-testwebclientid.apps.googleusercontent.com
+          FIRST_VERSION: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          set +x
+          first=$((FIRST_VERSION))
+          second=$((first + 1))
+          RUSHIT_VERSION_CODE="$first" ./gradlew :app:assembleDebug --no-daemon --console=plain
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/first-fixture.apk"
+          # Exercise the Gradle-property path and its precedence over the environment.
+          RUSHIT_VERSION_CODE="$first" ./gradlew :app:assembleDebug "-PRUSHIT_VERSION_CODE=$second" --no-daemon --console=plain
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/second-fixture.apk"
+          printf '%s\n' "$first" > "$RUNNER_TEMP/first-version"
+          printf '%s\n' "$second" > "$RUNNER_TEMP/second-version"
+
+      - name: Verify real APK signatures, fingerprints, version codes and Web Client ID
+        shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: 000000000000-testwebclientid.apps.googleusercontent.com
+        run: |
+          set -euo pipefail
+          first_version="$(cat "$RUNNER_TEMP/first-version")"
+          second_version="$(cat "$RUNNER_TEMP/second-version")"
+          for pair in "first:$first_version" "second:$second_version"; do
+            label="${pair%%:*}"; expected="${pair#*:}"
+            apk="$RUNNER_TEMP/$label-fixture.apk"
+            badging="$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk")"
+            printf '%s\n' "$badging" | grep "package: name='com.rushit.app'"
+            printf '%s\n' "$badging" | grep "versionCode='$expected'"
+            verification="$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs --min-sdk-version 24 "$apk")"
+            printf '%s\n' "$verification" | grep -E '^(Verifies|Verified using v[1234] scheme|Signer #1 certificate SHA-(1|256) digest:)'
+            printf '%s\n' "$verification" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' > "$RUNNER_TEMP/$label-fingerprint"
+            python3 - "$apk" <<'PY'
+          import os, re, sys, zipfile
+          from pathlib import Path
+          expected = os.environ['GOOGLE_WEB_CLIENT_ID']
+          source = Path('app/build/generated/source/buildConfig/debug/com/rushit/app/BuildConfig.java').read_text()
+          assert re.search(r'String GOOGLE_WEB_CLIENT_ID = "([^"]*)";', source).group(1) == expected
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              assert any(expected.encode() in apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
+          PY
+          done
+          cmp "$RUNNER_TEMP/first-fingerprint" "$RUNNER_TEMP/second-fingerprint"
+          test "$second_version" -gt "$first_version"
+          echo 'PASS: two real APKs have the same signing certificate, increasing version codes and the exact fixture Web Client ID.'
+          {
+            echo '### Real APK fixture verification'
+            echo '- Existing JVM unit tests and unconfigured local-default APK: passed.'
+            echo "- Version codes: $first_version, then $second_version."
+            echo '- Signing certificate: identical across both configured builds.'
+            echo '- Google Web Client ID: existing non-working test fixture, not a real credential.'
+            echo '- No Supabase or Google service was contacted.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload real unit-test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rushit-signing-fix-test-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/test-results/testDebugUnitTest
+          if-no-files-found: ignore
+
+      - name: Remove disposable signing fixture
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${FIXTURE_DIR:-}" && "$FIXTURE_DIR" == "$RUNNER_TEMP"/rushit-signing-fixture.* ]]; then
+            rm -f -- "$FIXTURE_DIR/fixture.p12"
+            rmdir -- "$FIXTURE_DIR" 2>/dev/null || true
+          fi
+          rm -f -- "$RUNNER_TEMP/first-fixture.apk" "$RUNNER_TEMP/second-fixture.apk"
