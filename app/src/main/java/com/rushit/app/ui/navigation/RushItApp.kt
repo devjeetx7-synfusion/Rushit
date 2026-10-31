@@ -267,18 +267,6 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     }
                     composable("orders") {
                         LaunchedEffect(Unit) { orders.refreshOrders() }
-
-    // Re-read the account when the app returns to the foreground so a session that expired or was
-    // revoked elsewhere cannot leave protected screens reachable. A transient network failure is
-    // deliberately not allowed to clear an already signed-in state.
-    val appLifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(appLifecycle) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && auth.startupRouteHandled) auth.refreshAccount()
-        }
-        appLifecycle.addObserver(observer)
-        onDispose { appLifecycle.removeObserver(observer) }
-    }
                         if (!needsStartupRoute) OrdersScreen(
                             state = orderState,
                             onHome = { selectMain("home") },
@@ -458,18 +446,6 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     composable("tracking") {
                         if (!needsStartupRoute) {
                             LaunchedEffect(Unit) { orders.refreshOrders() }
-
-    // Re-read the account when the app returns to the foreground so a session that expired or was
-    // revoked elsewhere cannot leave protected screens reachable. A transient network failure is
-    // deliberately not allowed to clear an already signed-in state.
-    val appLifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(appLifecycle) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && auth.startupRouteHandled) auth.refreshAccount()
-        }
-        appLifecycle.addObserver(observer)
-        onDispose { appLifecycle.removeObserver(observer) }
-    }
                             TrackingScreen(
                                 orders = orderState.orders,
                                 loading = orderState.ordersLoading,

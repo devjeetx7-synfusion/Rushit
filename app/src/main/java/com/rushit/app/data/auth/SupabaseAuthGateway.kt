@@ -275,6 +275,7 @@ class SupabaseAuthGateway(private val supabase: SupabaseClient) : AuthGateway {
          * release; `encodeDefaults = false` keeps `created_at`/`updated_at` out of insert payloads so
          * the database defaults and triggers stay in charge.
          */
+        @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
         val serializer: KotlinXSerializer = KotlinXSerializer(
             Json {
                 ignoreUnknownKeys = true
