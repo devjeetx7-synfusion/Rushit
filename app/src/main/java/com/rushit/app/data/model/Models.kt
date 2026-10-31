@@ -14,6 +14,7 @@ data class Product(
     val name: String,
     val description: String,
     val categoryId: String,
+    val brand: String? = null,
     val imageUrl: String? = null,
     @DrawableRes val imageRes: Int? = null,
     val pricePaise: Long,
@@ -31,6 +32,49 @@ data class Product(
     val rating: Double? = null,
     val reviewCount: Int = 0,
     val specifications: Map<String, String> = emptyMap(),
+    
+    // Advanced Info
+    val keyFeatures: List<String> = emptyList(),
+    val whatsInTheBox: String? = null,
+    val careInstructions: String? = null,
+    val warranty: String? = null,
+    val returnPolicy: String? = null,
+    val sellerInformation: String? = null,
+    val tags: List<String> = emptyList(), // for recommendations
+    val availableOffers: List<String> = emptyList() // for offers/coupons
+)
+
+data class Review(
+    val id: String,
+    val productId: String,
+    val customerName: String,
+    val rating: Int,
+    val title: String,
+    val body: String,
+    val date: String,
+    val helpfulCount: Int = 0,
+    val hasPhotos: Boolean = false,
+    val hasVideos: Boolean = false
+)
+
+data class Comment(
+    val id: String,
+    val productId: String,
+    val author: String,
+    val text: String,
+    val date: String,
+    val replies: List<Comment> = emptyList(),
+    val helpfulCount: Int = 0
+)
+
+data class Question(
+    val id: String,
+    val productId: String,
+    val author: String,
+    val text: String,
+    val date: String,
+    val answer: String? = null,
+    val helpfulCount: Int = 0
 )
 
 enum class MediaType { IMAGE, VIDEO }
@@ -143,4 +187,4 @@ data class SellerSettlement(val id: String, val sellerId: String, val period: St
 
 data class Payout(val id: String, val sellerId: String, val amountPaise: Long, val status: String, val date: String)
 
-data class Catalog(val categories: List<Category>, val products: List<Product>, val isSample: Boolean)
+data class Catalog(val categories: List<Category>, val products: List<Product>, val isSample: Boolean, val reviews: List<Review> = emptyList(), val comments: List<Comment> = emptyList(), val questions: List<Question> = emptyList())

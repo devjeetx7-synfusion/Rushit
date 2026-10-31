@@ -36,6 +36,7 @@ fun ProductDetailsScreen(
     onCart: () -> Unit,
     onCheckout: () -> Unit,
     onRetry: () -> Unit,
+    onProduct: (String) -> Unit,
 ) {
     val product = remember(state.products, productId) { state.products.firstOrNull { it.id == productId } }
     var selectedVariantId by remember { mutableStateOf<String?>(null) }
@@ -126,12 +127,17 @@ fun ProductDetailsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
                     Text(formatPrice(currentPrice), style = MaterialTheme.typography.headlineMedium, color = Ink)
                     if (currentOriginalPrice != null && currentOriginalPrice > currentPrice) {
+                        val savings = currentOriginalPrice - currentPrice
+                        val discountPercent = (savings * 100) / currentOriginalPrice
                         Text(
                             formatPrice(currentOriginalPrice),
                             style = MaterialTheme.typography.bodyLarge.copy(textDecoration = TextDecoration.LineThrough),
                             color = Muted,
                             modifier = Modifier.padding(start = 8.dp)
                         )
+                        Surface(shape = RoundedCornerShape(8.dp), color = Coral.copy(alpha = 0.1f), modifier = Modifier.padding(start = 8.dp)) {
+                            Text("$discountPercent% OFF", color = Coral, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
                     }
                 }
 
@@ -176,18 +182,43 @@ fun ProductDetailsScreen(
                 Text(product.description.ifBlank { "Product information is not configured yet." }, style = MaterialTheme.typography.bodyMedium, color = Muted)
                 
                 if (product.specifications.isNotEmpty()) {
-                    Text("Specifications", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                    product.specifications.forEach { (key, value) ->
-                        Row(modifier = Modifier.padding(bottom = 4.dp)) {
-                            Text("$key: ", style = MaterialTheme.typography.bodyMedium, color = Ink)
-                            Text(value, style = MaterialTheme.typography.bodyMedium, color = Muted)
+                    ExpandableSection("Specifications") {
+                        product.specifications.forEach { (key, value) ->
+                            Row(modifier = Modifier.padding(bottom = 4.dp)) {
+                                Text("$key: ", style = MaterialTheme.typography.bodyMedium, color = Ink)
+                                Text(value, style = MaterialTheme.typography.bodyMedium, color = Muted)
+                            }
                         }
                     }
                 }
                 
-                Text("Delivery & availability", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                Text(if (isAvailable) "In Stock. Delivery in 3-5 days." else "Currently out of stock.", style = MaterialTheme.typography.bodyMedium, color = Muted)
+                if (product.keyFeatures.isNotEmpty()) {
+                    ExpandableSection("Key Features") {
+                        product.keyFeatures.forEach { feature ->
+                            Text("• $feature", style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
+                        }
+                    }
+                }
+
+                if (product.whatsInTheBox != null) ExpandableSection("What's in the Box") { Text(product.whatsInTheBox, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+                if (product.careInstructions != null) ExpandableSection("Care Instructions") { Text(product.careInstructions, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+                if (product.warranty != null) ExpandableSection("Warranty") { Text(product.warranty, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+                if (product.returnPolicy != null) ExpandableSection("Return Policy") { Text(product.returnPolicy, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+                if (product.sellerInformation != null) ExpandableSection("Seller Information") { Text(product.sellerInformation, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+
+                ProductOffers(product.availableOffers)
+                PincodeChecker()
                 
+                // Get reviews/comments from state (assuming we pass them or use empty for now if not passed, but we will pass them via state)
+                // We don't have them in state yet, let's just use empty lists if not found
+                // Wait, ShopUiState doesn't have reviews yet. Let's add them to ShopUiState.
+                
+                ProductReviewsSection(state.reviews(product.id))
+                ProductQASection(state.comments(product.id), state.questions(product.id))
+                
+                ProductRecommendations("Similar Products", state.recommendations(product.id), onProduct = onProduct)
+                ProductRecommendations("Recently Viewed", state.recentlyViewedProducts(product.id), onProduct = onProduct)
+
                 Spacer(Modifier.height(24.dp))
             }
             Surface(color = CardWhite, shadowElevation = 8.dp) {

@@ -265,9 +265,11 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         }
                     }
                     composable("product/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
-                        if (!needsStartupRoute) ProductDetailsScreen(shopState, backStackEntry.arguments?.getString("id").orEmpty(),
+                        val id = backStackEntry.arguments?.getString("id").orEmpty()
+                        LaunchedEffect(id) { shop.recordView(id) }
+                        if (!needsStartupRoute) ProductDetailsScreen(shopState, id,
                             onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity, onWishlist = shop::toggleWishlist,
-                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onRetry = shop::loadCatalog)
+                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onRetry = shop::loadCatalog, onProduct = ::openProduct)
                     }
                     composable("cart") {
                         if (!needsStartupRoute) CartScreen(shopState, onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity,

@@ -37,6 +37,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -66,6 +71,7 @@ import com.rushit.app.domain.categoriesForMode
 import com.rushit.app.domain.productsForMode
 import com.rushit.app.domain.searchProducts
 import com.rushit.app.ui.components.CatalogImage
+import com.rushit.app.ui.components.RushButton
 import com.rushit.app.ui.components.MessageCard
 import com.rushit.app.ui.components.ProductCard
 import com.rushit.app.ui.components.RoundIconButton

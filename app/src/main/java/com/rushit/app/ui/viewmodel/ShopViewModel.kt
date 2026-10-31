@@ -39,6 +39,9 @@ data class ShopUiState(
     val isSample: Boolean = true,
     val categories: List<Category> = emptyList(),
     val products: List<Product> = emptyList(),
+    val allReviews: List<com.rushit.app.data.model.Review> = emptyList(),
+    val allComments: List<com.rushit.app.data.model.Comment> = emptyList(),
+    val allQuestions: List<com.rushit.app.data.model.Question> = emptyList(),
     val selectedMode: ShoppingMode = ShoppingMode.GROCERY,
     val carts: Map<ShoppingMode, Map<String, Int>> = emptyMap(),
     val wishlist: Set<String> = emptySet(),
@@ -48,6 +51,7 @@ data class ShopUiState(
     val searchQuery: String = "",
     val searchCategoryId: String? = null,
     val recentSearches: List<String> = emptyList(),
+    val recentlyViewed: List<String> = emptyList(),
     val selectedCategoryId: String? = null,
 ) {
     val cart: Map<String, Int> get() = carts[selectedMode].orEmpty()
@@ -63,6 +67,21 @@ data class ShopUiState(
 
     /** Products for the active mode, narrowed by the selected category. */
     fun visibleProducts(): List<Product> = productsForSelection(products, selectedMode, selectedCategoryId)
+
+    fun reviews(productId: String) = allReviews.filter { it.productId == productId }
+    fun comments(productId: String) = allComments.filter { it.productId == productId }
+    fun questions(productId: String) = allQuestions.filter { it.productId == productId }
+    
+    fun recommendations(productId: String): List<Product> {
+        val target = products.find { it.id == productId } ?: return emptyList()
+        return products.filter { it.id != productId && it.categoryId == target.categoryId }.take(10)
+    }
+    
+    fun recentlyViewedProducts(currentProductId: String): List<Product> {
+        val byId = products.associateBy { it.id }
+        return recentlyViewed.filter { it != currentProductId }.mapNotNull { byId[it] }
+    }
+
 }
 
 @OptIn(FlowPreview::class)
@@ -83,6 +102,7 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
             selectedAddressId = prefs.getString("selected_address_id", null)
                 ?.takeIf { id -> initialAddresses.any { it.id == id } } ?: initialAddresses.firstOrNull()?.id,
             recentSearches = readRecent(initialMode),
+            recentlyViewed = readRecentlyViewed(),
         )
     )
     val state = _state.asStateFlow()
@@ -115,6 +135,9 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
                             loading = false,
                             categories = catalog.categories.sortedBy { category -> category.sortOrder },
                             products = catalog.products,
+                            allReviews = catalog.reviews,
+                            allComments = catalog.comments,
+                            allQuestions = catalog.questions,
                             isSample = catalog.isSample,
                             error = null,
                             selectedCategoryId = resolveCategorySelection(catalog.categories, it.selectedMode, it.selectedCategoryId),
@@ -247,6 +270,18 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
             }
         }
     }.getOrDefault(emptyList())
+
+
+    fun recordView(productId: String) {
+        val current = _state.value.recentlyViewed
+        if (current.firstOrNull() == productId) return // already at top
+        val updated = (listOf(productId) + current.filter { it != productId }).take(10)
+        prefs.edit().putString("recently_viewed", updated.joinToString(",")).apply()
+        _state.update { it.copy(recentlyViewed = updated) }
+    }
+
+    private fun readRecentlyViewed(): List<String> =
+        prefs.getString("recently_viewed", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
 
     companion object {
         fun factory(context: Context, repository: CatalogRepository) = object : ViewModelProvider.Factory {
