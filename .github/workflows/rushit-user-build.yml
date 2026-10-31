@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: read
+  # Only so a failed build can leave its compiler output on the pull request. Actions logs and
+  # artifacts require signed-in web access to download, which makes a red run hard to diagnose.
+  pull-requests: write
 
 jobs:
   build-apk:
@@ -42,11 +45,12 @@ jobs:
           RUSHIT_PRIVACY_URL: ${{ vars.RUSHIT_PRIVACY_URL }}
           GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           # Google Sign-In is the only authentication method, so the auth unit tests must pass
           # before an APK is produced. They run on the JVM: no emulator, no credentials, no network.
-          ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
-          ./gradlew :app:assembleDebug --no-daemon --console=plain
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain \
+            2>&1 | tee "$RUNNER_TEMP/build.log"
+          exit "${PIPESTATUS[0]}"
 
       - name: Verify APK identity and signature
         shell: bash
@@ -89,6 +93,38 @@ jobs:
           fi
           echo "Verified com.rushit.app test APK with versionCode $version_code."
           echo "Debug certificate SHA-256: ${certificate,,}"
+
+      - name: Report a failed build on the pull request
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          {
+            printf 'Build failed at %s.\n\n```\n' "$GITHUB_SHA"
+            LOG="$RUNNER_TEMP/build.log"
+            if [ -f "$LOG" ]; then
+              grep -E '^e: |^w: |error:|FAILURE:|What went wrong|Caused by:|Execution failed for task|> Task .*FAILED|tests? completed' "$LOG" | head -n 200
+              printf '\n'
+              tail -n 60 "$LOG"
+            else
+              printf 'No Gradle log was produced; the step failed before Gradle ran.\n'
+            fi
+            # Unit-test assertion failures only appear in the XML report, not on stdout.
+            for report in $(find app/build/test-results -name '*.xml' 2>/dev/null); do
+              if grep -q '<failure' "$report"; then
+                printf '\nFailed tests in %s:\n' "$report"
+                sed -n 's/.*<failure message="\([^"]*\)".*/  \1/p' "$report" | head -n 40
+              fi
+            done
+            printf '```\n'
+          } > /tmp/comment.md
+          head -c 60000 /tmp/comment.md > /tmp/comment-trimmed.md
+          jq -Rs '{body: .}' < /tmp/comment-trimmed.md > /tmp/comment.json
+          gh api -X POST "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --input /tmp/comment.json
 
       - name: Upload unit test reports
         if: always()
