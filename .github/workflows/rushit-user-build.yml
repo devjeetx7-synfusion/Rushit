@@ -113,13 +113,19 @@ jobs:
             else
               printf 'No Gradle log was produced; the step failed before Gradle ran.\n'
             fi
-            # Unit-test assertion failures only appear in the XML report, not on stdout.
-            for report in $(find app/build/test-results -name '*.xml' 2>/dev/null); do
-              if grep -q '<failure' "$report"; then
-                printf '\nFailed tests in %s:\n' "$report"
-                sed -n 's/.*<failure message="\([^"]*\)".*/  \1/p' "$report" | head -n 40
-              fi
-            done
+            # An assertion failure only appears in the XML report, and assertTrue carries no
+            # message, so the stack trace is the only way to tell which line failed.
+            printf '\n'
+            python3 - <<'PYEOF'
+            import glob
+            import xml.etree.ElementTree as ET
+            for path in sorted(glob.glob('app/build/test-results/**/*.xml', recursive=True)):
+                for case in ET.parse(path).getroot().iter('testcase'):
+                    for failure in list(case.iter('failure')) + list(case.iter('error')):
+                        print()
+                        print('FAILED: %s > %s' % (case.get('classname'), case.get('name')))
+                        print((failure.text or failure.get('message') or '(no detail)')[:3000])
+            PYEOF
             printf '```\n'
           } > /tmp/comment.md
           head -c 60000 /tmp/comment.md > /tmp/comment-trimmed.md

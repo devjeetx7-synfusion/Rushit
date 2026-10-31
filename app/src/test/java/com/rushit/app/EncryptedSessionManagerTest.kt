@@ -57,13 +57,16 @@ class EncryptedSessionManagerTest {
         // testable here is that the manager writes one payload and reads back the same session.
         val store = InMemorySessionStore()
         val manager = EncryptedSessionManager(store)
+        // expiresAt is stamped when the session is created, so the very same instance has to be
+        // compared against the restored one.
+        val saved = session()
 
-        manager.saveSession(session())
+        manager.saveSession(saved)
         val payload = store.payload
 
         assertNotNull(payload)
         assertTrue("the payload must be the serialized session", payload!!.startsWith("{"))
-        assertEquals(session(), manager.loadSession())
+        assertEquals(saved, manager.loadSession())
     }
 
     @Test
