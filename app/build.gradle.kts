@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+import java.net.URI
 import java.util.Base64
 import java.util.Properties
 
@@ -37,14 +39,73 @@ listOf(
             "Set it in local.properties, a Gradle property, or the environment. See docs/AUTH_SETUP.md."
     )
 }
-// A client app may only contain a publishable/anon key, never a privileged key.
-val jwtPayload = runCatching {
-    String(Base64.getUrlDecoder().decode(supabaseKey.split('.')[1]), Charsets.UTF_8)
-}.getOrDefault("")
-require(!supabaseKey.startsWith("sb_secret_") &&
-    !Regex("\"role\"\\s*:\\s*\"service_role\"").containsMatchIn(jwtPayload)) {
-    "Never bundle a Supabase secret or service-role key. Use an anon/publishable key."
+// Keep local development usable without credentials, but reject malformed or privileged values
+// whenever they are supplied. CI additionally requires all three values in its preflight step.
+require(googleWebClientId.isBlank() ||
+    Regex("^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$").matches(googleWebClientId)) {
+    "GOOGLE_WEB_CLIENT_ID must be the Web OAuth client ID ending in .apps.googleusercontent.com."
 }
+val supabaseUri = runCatching { URI(supabaseUrl) }.getOrNull()
+require(supabaseUrl.isBlank() || (
+    supabaseUri != null && supabaseUri.scheme == "https" &&
+        !supabaseUri.host.isNullOrBlank() && supabaseUri.rawUserInfo == null &&
+        supabaseUri.rawPath in listOf("", "/") &&
+        (supabaseUri.port == -1 || supabaseUri.port in 1..65535) &&
+        supabaseUri.rawQuery == null && supabaseUri.rawFragment == null &&
+        supabaseUrl.none { it.isWhitespace() || it == '\\' }
+    )) {
+    "SUPABASE_URL must be an HTTPS project origin without credentials, a path, a query or a fragment."
+}
+// Check the JWT role structurally, rather than relying on a whitespace-sensitive regex. A missing
+// or unpadded Base64URL segment is invalid. The signature is not verified with a server secret here.
+val isPublicSupabaseKey = supabaseKey.isBlank() ||
+    Regex("^sb_publishable_[A-Za-z0-9_-]+$").matches(supabaseKey) ||
+    runCatching {
+        val segments = supabaseKey.split('.')
+        require(segments.size == 3 && segments.all { it.isNotEmpty() })
+        val decoder = Base64.getUrlDecoder()
+        val header = JsonSlurper().parseText(String(decoder.decode(segments[0]), Charsets.UTF_8))
+        val payload = JsonSlurper().parseText(String(decoder.decode(segments[1]), Charsets.UTF_8))
+        header is Map<*, *> && payload is Map<*, *> && payload["role"] == "anon" &&
+            decoder.decode(segments[2]).isNotEmpty()
+    }.getOrDefault(false)
+require(isPublicSupabaseKey) {
+    "SUPABASE_ANON_KEY must be a publishable key or a legacy anon JWT. " +
+        "Never bundle a Supabase secret or service-role key."
+}
+
+// GitHub Actions supplies a monotonically increasing run number. Local builds retain version 1;
+// callers can override it with -PRUSHIT_VERSION_CODE=... or the same-named environment variable.
+val versionCodeInput = setting("RUSHIT_VERSION_CODE").trim().ifBlank { "1" }
+val ciVersionCode = versionCodeInput.toIntOrNull()
+require(Regex("^[1-9][0-9]*$").matches(versionCodeInput) &&
+    ciVersionCode != null && ciVersionCode <= 2_100_000_000) {
+    "RUSHIT_VERSION_CODE must be an integer from 1 to 2100000000 (Android's versionCode limit)."
+}
+
+// Only the file location is exported to subsequent workflow steps. Passwords and the alias stay
+// step-scoped environment secrets. Never add signing values to BuildConfig or resource files.
+val testSigningSettings = listOf(
+    "RUSHIT_TEST_KEYSTORE_PATH",
+    "RUSHIT_TEST_KEYSTORE_PASSWORD",
+    "RUSHIT_TEST_KEY_ALIAS",
+    "RUSHIT_TEST_KEY_PASSWORD",
+).associateWith(::setting)
+val useStableTestSigning = testSigningSettings.values.any { it.isNotBlank() }
+if (useStableTestSigning) {
+    val missing = testSigningSettings.filterValues { it.isBlank() }.keys
+    require(missing.isEmpty()) {
+        "Incomplete persistent test signing configuration. Set all of: ${missing.joinToString()}."
+    }
+}
+val testKeystoreFile = if (useStableTestSigning) {
+    file(testSigningSettings.getValue("RUSHIT_TEST_KEYSTORE_PATH")).canonicalFile.also {
+        require(it.isFile) { "The configured persistent test keystore does not exist or is not a file." }
+        require(!it.toPath().startsWith(rootProject.projectDir.canonicalFile.toPath())) {
+            "Keep the persistent test keystore outside the checkout; use RUNNER_TEMP in CI."
+        }
+    }
+} else null
 
 android {
     namespace = "com.rushit.app"
@@ -54,7 +115,7 @@ android {
         applicationId = "com.rushit.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
+        versionCode = ciVersionCode
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -63,6 +124,18 @@ android {
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(googleWebClientId))
+    }
+    signingConfigs {
+        // AGP creates the debug config with the local default identity. Override it only when a
+        // complete persistent test identity is supplied; do not change release/Play signing.
+        if (useStableTestSigning) {
+            getByName("debug") {
+                storeFile = testKeystoreFile
+                storePassword = testSigningSettings.getValue("RUSHIT_TEST_KEYSTORE_PASSWORD")
+                keyAlias = testSigningSettings.getValue("RUSHIT_TEST_KEY_ALIAS")
+                keyPassword = testSigningSettings.getValue("RUSHIT_TEST_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         release {

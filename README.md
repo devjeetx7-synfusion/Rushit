@@ -28,32 +28,112 @@ Install JDK 17, Android SDK Platform 34 and Android SDK Build-Tools 34.0.0. Andr
 ./gradlew testDebugUnitTest
 ```
 
-The debug APK, when the build succeeds, is at `app/build/outputs/apk/debug/app-debug.apk`. The project uses Gradle 8.7, Android Gradle Plugin 8.5.2, Kotlin 1.9.24 and Compose compiler 1.5.14.
+The debug APK, when the build succeeds, is at `app/build/outputs/apk/debug/app-debug.apk`. The project uses Gradle 8.7, Android Gradle Plugin 8.5.2, Kotlin 1.9.22 and Compose compiler 1.5.9. Local builds retain `versionCode = 1` unless overridden with `-PRUSHIT_VERSION_CODE=123` or the `RUSHIT_VERSION_CODE` environment variable. Values must be integers from 1 through 2,100,000,000. Local builds can also use the persistent test signing environment variables described below; without them, the normal local debug keystore is preserved.
 
 ## Manually build a test APK
 
-The **RushIt User Build** GitHub Actions workflow runs on pull requests, on pushes to `main`, and when manually dispatched. It runs `:app:testDebugUnitTest`, then builds the `:app` debug variant with Android's default debug signing, verifies the APK's package ID, positive version code and signature, and uploads `app-debug.apk` as the **RushIt-Test-APK** artifact plus the unit-test report. No signing secrets or certificate fingerprint variable are required. The workflow does not access or delete any previously configured signing secrets or keystores.
+The **RushIt User Build** GitHub Actions workflow runs on pull requests, pushes to `main`, and manual dispatch. Before Gradle runs, it validates the required public Google/Supabase configuration and the CI version code. It then runs exactly:
 
-### Signing identity and updates
+```sh
+./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+```
 
-The application ID remains `com.rushit.app` and the current `versionCode` is `1`. GitHub-hosted runners are temporary, so their default debug keystore can differ between runs. **APK signing identities are not stable across builds**, and an APK from this workflow may not update a previous installation. A locally built debug APK or a separately signed release APK can also use a different certificate.
+After the build, it checks the package ID, exact run version code, configured Google Web Client ID in BuildConfig/DEX, and APK signature. It prints only the public certificate SHA-1/SHA-256 fingerprints. Successful runs upload **`rushit-user-apk`** (containing `app-debug.apk`); **`rushit-user-unit-test-reports`** contains the HTML unit-test report and JUnit XML results. Existing pull-request failure comments are retained. A failed preflight, test, build, or APK check does not produce a successful APK artifact.
 
-Android accepts an update only when the application ID and signing certificate match the installed app and its `versionCode` is **at least** the installed version. The workflow cannot determine what is installed on a device. It prints the public debug certificate SHA-256 fingerprint in the verification step so builds can be compared. The workflow never uninstalls an app; uninstalling an incompatible installation can remove its data. Preserve any existing test keystore and backup if you may need to restore the previous signing identity later.
+### Create the persistent test keystore once
 
-Optional public repository Actions variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GOOGLE_WEB_CLIENT_ID`, `RUSHIT_TERMS_URL`, and `RUSHIT_PRIVACY_URL` use the existing build configuration. Their values are embedded in the APK and are therefore public: only use a Supabase **anon/publishable** key, never a service-role key or another secret. Without them the app still builds and still opens, but it reports that Google Sign-In or the account service is not configured instead of signing anybody in.
+Use one long-lived **test-only** identity for this workflow, separate from any production/Play signing key. Run these commands on a trusted machine, **outside the repository**. Do not regenerate the keystore for each CI run. The interactive password prompt keeps passwords out of shell history and command arguments.
 
-### Run and download
+```sh
+# Bash, with JDK 17 installed. This directory is outside the checkout.
+mkdir -p "$HOME/rushit-private-signing"
+chmod 700 "$HOME/rushit-private-signing"
+keytool -genkeypair \
+  -keystore "$HOME/rushit-private-signing/rushit-test.p12" \
+  -storetype PKCS12 -alias rushit-test \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=RushIt Test, O=RushIt"
+```
 
-1. Under **Actions → Build test APK**, choose **Run workflow**, select a branch containing the updated workflow, and run it. Select `main` after the change is merged. Only run code from a branch you trust.
-2. Open the completed successful run and download **RushIt-Test-APK** from **Artifacts**. Unzip it to obtain `app-debug.apk`. Failed builds or validation do not upload an APK.
-3. Before updating a device, compare its installed version (`adb shell dumpsys package com.rushit.app | grep versionCode`) with the APK's version (`aapt dump badging app-debug.apk`) and compare signing certificates using `apksigner verify --verbose --print-certs`. Use `adb install -r app-debug.apk` only when the identity and version are compatible.
+Choose a strong password and use the same password for the PKCS12 store and key. Preserve the original file and passwords in an access-controlled password manager/secure backup. If you already have a test keystore, reuse it instead of creating a new identity. Losing the key means future builds cannot update installations signed by it.
+
+Calculate the **public SHA-1 fingerprint** for the Android OAuth client (the command prompts for the store password):
+
+```sh
+keytool -list -v \
+  -keystore "$HOME/rushit-private-signing/rushit-test.p12" \
+  -alias rushit-test
+```
+
+In Google Cloud, register an **Android** OAuth client with package **`com.rushit.app`** and that SHA-1. This is separate from the **Web** OAuth client ID passed to the app. CI also prints SHA-1 and SHA-256 after each build; with the same keystore and alias, these must be identical across runs. SHA-256 is useful for comparing the APK signing identity.
+
+Base64-encode the **binary keystore**, not its fingerprint or a text export. Write the encoded secret outside Git and restrict its permissions:
+
+```sh
+(umask 077; base64 -w 0 "$HOME/rushit-private-signing/rushit-test.p12" \
+  > "$HOME/rushit-private-signing/rushit-test.p12.base64")
+# macOS: replace `base64 -w 0 INPUT` with `base64 -i INPUT | tr -d '\n'`.
+```
+
+Under **Settings → Secrets and variables → Actions → Secrets**, create these exact repository **Secrets**:
+
+| Secret | Value |
+| --- | --- |
+| `RUSHIT_TEST_KEYSTORE_BASE64` | Contents of the Base64 file; wrapped Base64 is also accepted. |
+| `RUSHIT_TEST_KEYSTORE_PASSWORD` | Keystore/store password. |
+| `RUSHIT_TEST_KEY_ALIAS` | The existing alias, `rushit-test` for the command above. |
+| `RUSHIT_TEST_KEY_PASSWORD` | Private-key password (same as the store password for the PKCS12 example). |
+
+Do not paste these values into issues, logs, README, or command-line arguments. Do not add a Base64 print command. After securely storing the original and configuring GitHub, remove the temporary Base64 copy if it is no longer needed. Never commit the keystore, passwords, Base64 export, or signing environment files; `.gitignore` protects common names/extensions, but keeping all signing material outside the checkout is the primary protection.
+
+The workflow decodes the keystore with owner-only permissions into a fresh directory under **`$RUNNER_TEMP`**, validates its store password and alias, and passes only its path through `GITHUB_ENV`. Gradle receives the path and the three credential Secrets as environment variables. The debug signing configuration uses them only when all four are configured. Temporary signing files are removed in an always-run cleanup step and are never uploaded. Release signing is unchanged. Partial or invalid signing configuration fails rather than silently switching identities. If all signing Secrets are absent, CI explicitly warns that the APK uses the runner's **ephemeral default debug identity** and may not update an existing installation. Fork PRs do not receive repository Secrets, so this fallback can apply there. The workflow never creates a replacement persistent/random keystore.
+
+### Required public Actions Variables
+
+Under **Settings → Secrets and variables → Actions → Variables**, configure:
+
+| Variable | Required value |
+| --- | --- |
+| `GOOGLE_WEB_CLIENT_ID` | The real **Web application** OAuth client ID, with the form `PROJECT_NUMBER-IDENTIFIER.apps.googleusercontent.com`. It must match the Supabase Google provider's client ID. |
+| `SUPABASE_URL` | The real HTTPS project origin, such as `https://YOUR_PROJECT.supabase.co`; no embedded credentials, path, query, or fragment. |
+| `SUPABASE_ANON_KEY` | The project's public `sb_publishable_...` key or legacy JWT whose payload has `role=anon`. |
+| `RUSHIT_TERMS_URL` | Optional real HTTPS terms destination. |
+| `RUSHIT_PRIVACY_URL` | Optional real HTTPS privacy destination. |
+
+The first three are **required for CI**. Missing/malformed values fail in preflight before tests or compilation; this is intentional because Google Sign-In is the app's only authentication method. Format/role checks cannot prove that a real project accepts a token: the Web client type, provider configuration, and test users still need to be checked in the consoles. Local development still supports blank configuration and reports the unconfigured state at runtime.
+
+These values are embedded in the APK and are public by design. **Never** put a Google OAuth Client Secret, Supabase service-role JWT, or `sb_secret_...` key in these Variables or in the Android build configuration. The Google client secret belongs in Supabase; Supabase privileged keys belong only in trusted server/Edge Function configuration. Gradle also rejects a supplied `GOOGLE_CLIENT_SECRET`, malformed public values, and non-anon/secret Supabase keys.
+
+### Signing identity, version codes and in-place updates
+
+The application ID remains **`com.rushit.app`**. CI sets **`RUSHIT_VERSION_CODE` to `github.run_number`**, so distinct new runs of this workflow have increasing version codes. A re-run deliberately keeps the original run number and version code. Gradle accepts a same-named Gradle property or environment variable and otherwise defaults to `1` for local development. The workflow checks that the APK's actual version code equals its run number.
+
+Android accepts a normal in-place update when the package ID and signing certificate/lineage match, the version code is **not lower** than the installed version, and the platform/ABI are compatible. Keeping the same Secrets therefore allows future test APKs to update without uninstalling. Using a new run also supplies a higher version code; re-running an existing run can still replace an equal-version installation when the identity is compatible. The workflow cannot inspect what is already installed on a tester's device.
+
+**One migration reinstall may be necessary** when replacing an APK signed by an old ephemeral runner key, a different local debug key, or a release key. Android does not allow changing signing identity through an ordinary update. Before uninstalling, back up anything needed: uninstalling can delete device-local addresses, wishlist and demo orders. A Supabase account is separate, but this workflow does not back up or restore device-local data. If you still have the previous test keystore, prefer configuring that identity instead of forcing a reinstall. After migration to the persistent test key, keep it unchanged. A different release/Play App Signing identity can require another migration; this change does not implement signing-key rotation.
+
+### Run, download and install
+
+1. Under **Actions → RushIt User Build → Run workflow**, select a branch containing this workflow and run it; select `main` after merging. Only run trusted code with access to signing Secrets.
+2. Open the successful run. Confirm the version code and public certificate fingerprints in **Verify APK identity, configuration and signature** (also in the run summary). Compare the fingerprints with an earlier configured run; they must match.
+3. Download **`rushit-user-apk`** from **Artifacts** and unzip it to obtain **`app-debug.apk`**. Download **`rushit-user-unit-test-reports`** and open `reports/tests/testDebugUnitTest/index.html` for test details; the JUnit XML files are under `test-results/testDebugUnitTest/`. The workflow name and artifact name are different; use the exact lowercase artifact name.
+4. With Android SDK platform-tools/build-tools available, inspect and install:
+
+   ```sh
+   adb shell dumpsys package com.rushit.app | grep versionCode
+   aapt dump badging app-debug.apk | head -n 2
+   apksigner verify --verbose --print-certs --min-sdk-version 24 app-debug.apk
+   adb install -r app-debug.apk
+   ```
+
+   Alternatively, transfer the APK to the device and open it, allowing installation from that trusted source. `adb install -r` keeps app data when the update is compatible; it does not bypass signature or version restrictions. If you see `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, compare signing certificates and follow the one-time migration guidance above rather than repeatedly regenerating keys. Do not use `-d` to force a version downgrade.
 
 ## Configure Google Sign-In
 
 Google Sign-In is the only authentication method in this release. No credential is committed; see
 [`docs/AUTH_SETUP.md`](docs/AUTH_SETUP.md) for the full Google Cloud Console and Supabase setup, and
 add the following to the **ignored** root `local.properties` (or supply them as Gradle
-properties/environment variables in your own build environment):
+properties/environment variables in your own build environment). Replace the placeholders with real public values before configuring a build; leave them unset for unconfigured local development. CI requires the three authentication values as described above:
 
 ```properties
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
@@ -68,7 +148,7 @@ RUSHIT_PRIVACY_URL=https://YOUR_REAL_PRIVACY_URL
 that Credential Manager returns, and it must be the same value Supabase is configured with, because
 Supabase rejects a token whose audience it does not know. The matching **client secret belongs in
 Supabase only** — it is never referenced by the app, and the build fails if a `GOOGLE_CLIENT_SECRET`
-property is supplied or a recognizable service-role/`sb_secret_` key appears in any credential value.
+property is supplied or `SUPABASE_ANON_KEY` is not a well-formed publishable key/legacy anon JWT.
 
 The manual steps that remain, all documented in `docs/AUTH_SETUP.md`:
 
@@ -106,7 +186,9 @@ metadata.
 
 ## Verification and current limitations
 
-- The editing sandbox has no JDK, Android SDK, PostgreSQL or Supabase CLI, so builds are verified by the `RushIt User Build` workflow on GitHub Actions rather than locally. `supabase/tests/rls_isolation.sql` needs the Supabase CLI and Docker and has **not** been executed. Run `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` and `supabase test db` in a configured environment before shipping.
+- The workflow/signing change was verified on GitHub Actions on 2026-10-31: [fixture verification run 41225367021](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41225367021) passed **172 existing JUnit tests** (0 failures, 0 errors, 0 skipped), the required test/build command, unconfigured local `versionCode = 1`, and negative Gradle configuration checks. Two **real debug APKs** built with one disposable test identity had version codes **2 then 3**, identical signing certificates, valid signatures, and the exact existing non-working Google Web Client ID test fixture. Their common public SHA-256 was `12203aabb9efcc4e7294dcd53d98812dab6ea62f4c93fc4496ac901441efa93f`. This was a CI-only fixture, not a production credential; the temporary harness and keys were removed. The HTML/XML test results remain in that run's `rushit-signing-fix-test-reports` artifact.
+- The production workflow was also exercised in [run 41225366969](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41225366969): it **correctly failed before compilation** because `GOOGLE_WEB_CLIENT_ID`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` were missing, posted the pull-request failure comment, and uploaded no APK. A fully configured production-workflow build, repeated runs using the repository's persistent signing Secrets, real Google/Supabase authentication, and an on-device in-place update still need verification after the manual configuration above. The fixture run is not evidence that those external services are configured.
+- Local workflow validation passed YAML parsing, actionlint, Bash syntax/ShellCheck, ignore-rule checks, and **57 workflow fixture checks** (including mocked APK-verifier failure paths and real `keytool` keystore decoding/reuse). The local Gradle attempt was blocked before configuration by the sandbox's inability to download the Gradle distribution; the actual Android tests/builds above ran on GitHub Actions, not locally. `supabase/tests/rls_isolation.sql` needs the Supabase CLI and Docker and has **not** been executed. Run `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` and `supabase test db` in a configured environment before shipping; lint and database tests were not part of this verification.
 - The previously reported API 27 lint issue was addressed by moving `windowLightNavigationBar` into a `values-v27` resource; lint still needs to be rerun.
 - No emulator or attached device was available. Actual splash rendering, navigation, small-screen and large-text layouts, keyboard, location permission, cutouts, system bars, accessibility and screenshots remain unverified on device.
 - No Google Cloud OAuth configuration, Supabase project or signing credential was supplied, so **no end-to-end Google sign-in has been performed**: token exchange against a real Supabase project, session restore against a real project, live account deletion, and the applied RLS policies are all unverified. The app reports its own unconfigured state honestly instead of simulating success.
