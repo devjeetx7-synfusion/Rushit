@@ -200,7 +200,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             onModeSelected = shop::selectMode,
                             onCategorySelected = shop::selectCategory,
                             onProduct = ::openProduct,
-                            onAdd = { shop.changeQuantity(it, 1) },
+                            onAdd = { shop.changeQuantity(it, delta = 1) },
                             onWishlist = shop::toggleWishlist,
                             onRetry = shop::loadCatalog,
                             onNotifications = { nav.navigate("notifications") { launchSingleTop = true } },
@@ -236,20 +236,20 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         if (!needsStartupRoute) SearchScreen(shopState, onBack = { nav.popBackStack() }, onQuery = shop::updateSearch,
                             onSubmit = shop::recordSearch, onRecent = { shop.updateSearch(it); shop.recordSearch() }, onClearRecent = shop::clearRecentSearches,
                             onCategoryFilter = shop::selectSearchCategory,
-                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
+                            onAdd = { shop.changeQuantity(it, delta = 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
                     }
                     composable("all") {
                         if (!needsStartupRoute) ProductListingScreen("All ${shopState.selectedMode.label}", modeProducts, shopState, onBack = { nav.popBackStack() },
-                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
+                            onAdd = { shop.changeQuantity(it, delta = 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
                             emptyMessage = "No products have been configured for this mode yet.")
                     }
                     composable("bestsellers") {
                         if (!needsStartupRoute) ProductListingScreen("Bestsellers", modeProducts.filter { it.isBestseller }, shopState, onBack = { nav.popBackStack() },
-                            onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
+                            onAdd = { shop.changeQuantity(it, delta = 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog)
                     }
                     composable("wishlist") {
                         if (!needsStartupRoute) ProductListingScreen("Wishlist", modeProducts.filter { it.id in shopState.wishlist }, shopState,
-                            onBack = { nav.popBackStack() }, onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist,
+                            onBack = { nav.popBackStack() }, onAdd = { shop.changeQuantity(it, delta = 1) }, onWishlist = shop::toggleWishlist,
                             onProduct = ::openProduct, onRetry = shop::loadCatalog, emptyTitle = "No saved ${shopState.selectedMode.label.lowercase()} items",
                             emptyMessage = "Tap a heart to save an item. Switch modes to see saved items from another mode.")
                     }
@@ -258,7 +258,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             val id = backStackEntry.arguments?.getString("id").orEmpty()
                             val category = modeCategories.firstOrNull { it.id == id }
                             ProductListingScreen(category?.name ?: "Category", modeProducts.filter { it.categoryId == id }, shopState, onBack = { nav.popBackStack() },
-                                onAdd = { shop.changeQuantity(it, 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
+                                onAdd = { shop.changeQuantity(it, delta = 1) }, onWishlist = shop::toggleWishlist, onProduct = ::openProduct, onRetry = shop::loadCatalog,
                                 category = category,
                                 emptyMessage = if (category == null) "This category isn't part of ${shopState.selectedMode.label}. Pick a category from the current mode."
                                 else "No products are configured in this category yet.")
@@ -267,7 +267,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     composable("product/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
                         if (!needsStartupRoute) ProductDetailsScreen(shopState, backStackEntry.arguments?.getString("id").orEmpty(),
                             onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity, onWishlist = shop::toggleWishlist,
-                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onRetry = shop::loadCatalog)
+                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onRetry = shop::loadCatalog)
                     }
                     composable("cart") {
                         if (!needsStartupRoute) CartScreen(shopState, onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity,
