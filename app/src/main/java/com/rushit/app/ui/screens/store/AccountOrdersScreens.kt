@@ -52,7 +52,7 @@ import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.domain.formatPrice
-import com.rushit.app.ui.viewmodel.AuthUiState
+import com.rushit.app.data.auth.AuthState
 import com.rushit.app.ui.viewmodel.OrderUiState
 import com.rushit.app.ui.viewmodel.ShopUiState
 
@@ -118,7 +118,7 @@ fun OrdersScreen(
 }
 
 @Composable
-fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit, onHelp: () -> Unit, onNotifications: () -> Unit) {
+fun AccountScreen(authState: AuthState, errorMessage: String?, shop: ShopUiState, onWishlist: () -> Unit, onAddresses: () -> Unit, onOrders: () -> Unit, onSignInOrOut: () -> Unit, onHelp: () -> Unit, onNotifications: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var soundEnabled by remember { mutableStateOf(OrderSound.isEnabled(context)) }
@@ -127,6 +127,8 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
         if (!url.startsWith("https://")) info = "$title is not configured in this build."
         else try { uriHandler.openUri(url) } catch (_: Exception) { info = "Couldn't open $title. Check your browser and try again." }
     }
+    val isAuthenticated = authState is AuthState.Authenticated
+    val isBusy = authState is AuthState.Authenticating || authState is AuthState.Loading
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Account", style = MaterialTheme.typography.headlineMedium, color = Ink, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 20.dp))
@@ -135,9 +137,15 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
                 Box(Modifier.size(58.dp).clip(CircleShape).background(Peach), contentAlignment = Alignment.Center) { RushIcon(R.drawable.ic_user_02, null, Modifier.size(29.dp), Coral) }
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text(if (auth.authenticated) "You're signed in" else "Browsing the sample store", style = MaterialTheme.typography.titleMedium, color = Ink)
+                    Text(if (isAuthenticated) "You're signed in" else "Browsing the sample store", style = MaterialTheme.typography.titleMedium, color = Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text(if (auth.authenticated && auth.phone.isNotBlank()) maskedIndianMobile(auth.phone) else if (auth.authenticated) "Phone authentication is active on this device." else "Sign in when phone authentication is configured.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                    Text(
+                        if (isAuthenticated) {
+                            val authProfile = (authState as AuthState.Authenticated).profile
+                            if (authProfile?.fullName != null) authProfile.fullName else "Phone/Email authentication is active on this device."
+                        } else "Sign in when phone authentication is configured.", 
+                        style = MaterialTheme.typography.bodySmall, color = Muted
+                    )
                 }
             }
         }
@@ -170,9 +178,9 @@ fun AccountScreen(auth: AuthUiState, shop: ShopUiState, onWishlist: () -> Unit, 
             }
         }
         Spacer(Modifier.height(8.dp))
-        AccountRow(R.drawable.ic_logout_01, if (auth.authenticated) "Sign out" else "Sign in", if (auth.busy) "Please wait…" else "",
-            { if (auth.authenticated) confirmSignOut = true else onSignInOrOut() }, enabled = !auth.busy)
-        auth.error?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
+        AccountRow(R.drawable.ic_logout_01, if (isAuthenticated) "Sign out" else "Sign in", if (isBusy) "Please wait…" else "",
+            { if (isAuthenticated) confirmSignOut = true else onSignInOrOut() }, enabled = !isBusy)
+        errorMessage?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
         Spacer(Modifier.height(24.dp))
         Text(if (shop.isSample) "Sample catalog · Demo checkout only; no live inventory or delivery" else "Orders and checkout are not connected yet", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.padding(horizontal = 4.dp))
     }

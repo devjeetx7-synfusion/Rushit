@@ -1,172 +1,133 @@
 package com.rushit.app.data.auth
 
 import android.content.Context
+import com.rushit.app.data.model.Profile
+import com.rushit.app.data.model.UserSettings
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.Google
+import io.github.jan.supabase.gotrue.providers.builtin.IDToken
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.SocketTimeoutException
-import java.net.URI
-import java.net.URL
 
-internal fun interface AuthTransport {
-    fun request(method: String, path: String, body: JSONObject?, token: String?): AuthResponse
-}
-
-internal data class AuthResponse(val code: Int, val body: String) {
-    fun sessionOrNull(): StoredSession? = runCatching {
-        val json = JSONObject(body)
-        val access = json.getString("access_token")
-        val refresh = json.getString("refresh_token")
-        require(access.isNotBlank() && refresh.isNotBlank())
-        StoredSession(access, refresh)
-    }.getOrNull()
-
-    fun toFailure(isVerification: Boolean): AuthResult.Failure = AuthResult.Failure(when (code) {
-        400, 422 -> if (isVerification) "That code is invalid or expired. Check it or request another." else "This number could not receive a code. Check it and try again, or contact support."
-        401, 403 -> "Phone sign-in is unavailable. Check the Supabase project and public key configuration."
-        429 -> "Too many attempts. Please wait a little before trying again."
-        in 500..599 -> "The sign-in service is temporarily unavailable. Please try again."
-        else -> "We couldn't ${if (isVerification) "verify the code" else "send a code"}. Please try again."
-    })
-}
-
-/**
- * Supabase Auth's documented /otp, /verify, /user, /token and /logout endpoints.
- * Only a public anon/publishable key belongs in the client. RLS still applies to all data.
- */
-class SupabaseAuthRepository internal constructor(
-    private val store: SessionStore,
-    private val projectUrl: String,
-    private val publicKey: String,
-    private val transport: AuthTransport? = null,
+class SupabaseAuthRepository(
+    private val context: Context,
+    private val supabase: SupabaseClient
 ) : AuthRepository {
-    constructor(context: Context, projectUrl: String, publicKey: String) :
-        this(SecureSessionStore(context.applicationContext), projectUrl, publicKey)
 
-    private val baseUrl: String? = runCatching {
-        val uri = URI(projectUrl.trim())
-        require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null)
-        projectUrl.trim().trimEnd('/')
-    }.getOrNull()
-    private val configured get() = baseUrl != null && publicKey.isNotBlank()
+    val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
+    val authState = _authState.asStateFlow()
 
-    override suspend fun restoreSession(): SessionResult = withContext(Dispatchers.IO) {
-        val session = try { store.read() } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            currentCoroutineContext().ensureActive()
-            store.clear()
-            return@withContext SessionResult.Unauthenticated("Your saved session could not be restored. Please sign in again.")
-        } ?: return@withContext SessionResult.Unauthenticated()
-        currentCoroutineContext().ensureActive()
-        if (!configured) return@withContext SessionResult.Unauthenticated("Sign-in is not configured on this build.")
+    override suspend fun initialize() = withContext(Dispatchers.IO) {
         try {
-            val user = call("GET", "/user", token = session.accessToken)
-            currentCoroutineContext().ensureActive()
-            when {
-                user.code in 200..299 -> SessionResult.Authenticated
-                user.code == 401 || user.code == 403 -> {
-                    val refreshed = call("POST", "/token?grant_type=refresh_token", JSONObject().put("refresh_token", session.refreshToken))
-                    currentCoroutineContext().ensureActive()
-                    val newSession = refreshed.sessionOrNull()
-                    if (refreshed.code in 200..299 && newSession != null) {
-                        store.write(newSession)
-                        SessionResult.Authenticated
-                    } else if (refreshed.code == 400 || refreshed.code == 401 || refreshed.code == 403) {
-                        store.clear()
-                        SessionResult.Unauthenticated("Your session has expired. Please sign in again.")
-                    } else {
-                        SessionResult.Unauthenticated("Could not restore your session. Check your connection and try again.")
-                    }
+            val session = supabase.auth.currentSessionOrNull()
+            if (session != null) {
+                checkProfile()
+            } else {
+                _authState.value = AuthState.Unauthenticated
+            }
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error("Could not restore session: ${e.message}")
+        }
+    }
+
+    private suspend fun checkProfile() {
+        try {
+            val user = supabase.auth.currentUserOrNull()
+            if (user == null) {
+                _authState.value = AuthState.Unauthenticated
+                return
+            }
+            val profile = supabase.postgrest["profiles"]
+                .select { filter { eq("id", user.id) } }
+                .decodeSingleOrNull<Profile>()
+
+            if (profile == null || !profile.onboardingCompleted) {
+                val googleData = user.userMetadata
+                val fullName = googleData?.get("full_name")?.toString()?.replace("\"", "")
+                val avatarUrl = googleData?.get("avatar_url")?.toString()?.replace("\"", "")
+                
+                // create or update profile
+                if (profile == null) {
+                    val newProfile = Profile(
+                        id = user.id,
+                        fullName = fullName,
+                        avatarUrl = avatarUrl,
+                        onboardingCompleted = false
+                    )
+                    supabase.postgrest["profiles"].insert(newProfile)
+                    supabase.postgrest["user_settings"].insert(UserSettings(userId = user.id))
                 }
-                else -> SessionResult.Unauthenticated("Could not restore your session. Please try again.")
+                
+                _authState.value = AuthState.ProfileIncomplete(user.id, fullName, avatarUrl)
+            } else {
+                _authState.value = AuthState.Authenticated(profile)
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // Keep the encrypted session so a transient network failure does not destroy it.
-            SessionResult.Unauthenticated("Could not restore your session. Check your connection and try again.")
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error("Failed to load profile: ${e.message}")
         }
     }
 
-    override suspend fun requestOtp(phone: String): AuthResult = withContext(Dispatchers.IO) {
-        if (!configured) return@withContext missingConfiguration()
-        perform {
-            val response = call("POST", "/otp", JSONObject().put("phone", phone).put("create_user", true))
-            if (response.code in 200..299) AuthResult.Success else response.toFailure(isVerification = false)
+    override suspend fun signInWithGoogle(idToken: String): AuthResult = withContext(Dispatchers.IO) {
+        _authState.value = AuthState.Authenticating
+        try {
+            supabase.auth.signInWith(IDToken) {
+                this.idToken = idToken
+                provider = Google
+            }
+            checkProfile()
+            AuthResult.Success
+        } catch (e: Exception) {
+            _authState.value = AuthState.Unauthenticated
+            AuthResult.Failure(e.message ?: "Authentication failed")
         }
     }
 
-    override suspend fun verifyOtp(phone: String, token: String): AuthResult = withContext(Dispatchers.IO) {
-        if (!configured) return@withContext missingConfiguration()
-        perform {
-            val response = call("POST", "/verify", JSONObject().put("phone", phone).put("token", token).put("type", "sms"))
-            if (response.code !in 200..299) return@perform response.toFailure(isVerification = true)
-            val session = response.sessionOrNull()
-                ?: return@perform AuthResult.Failure("Sign-in could not be completed. Please request a new code.")
-            try {
-                store.write(session)
-                AuthResult.Success
-            } catch (_: Exception) {
-                AuthResult.Failure("We couldn't save your session securely. Please try again.")
-            }
+    override suspend fun updateProfile(username: String, fullName: String): AuthResult = withContext(Dispatchers.IO) {
+        try {
+            val user = supabase.auth.currentUserOrNull() ?: return@withContext AuthResult.Failure("User not found")
+            val updateData = mapOf(
+                "username" to username,
+                "full_name" to fullName,
+                "onboarding_completed" to true
+            )
+            supabase.postgrest["profiles"]
+                .update(updateData) { filter { eq("id", user.id) } }
+            checkProfile()
+            AuthResult.Success
+        } catch (e: Exception) {
+            AuthResult.Failure(e.message ?: "Could not update profile")
         }
     }
 
     override suspend fun signOut(): AuthResult = withContext(Dispatchers.IO) {
-        var readFailed = false
-        val session = try { store.read() } catch (_: Exception) { readFailed = true; null }
-        val revoked = when {
-            readFailed -> false
-            session == null -> true
-            !configured -> false
-            else -> try { call("POST", "/logout", token = session.accessToken).code in 200..299 } catch (_: Exception) { false }
-        }
-        store.clear()
-        if (revoked) AuthResult.Success else AuthResult.Failure("Signed out on this device, but the server session could not be revoked. Check your connection.")
-    }
-
-    private fun missingConfiguration() = AuthResult.Failure(
-        "Phone sign-in isn't configured yet. Ask the app administrator to configure Supabase and SMS delivery."
-    )
-
-    private inline fun perform(block: () -> AuthResult): AuthResult = try {
-        block()
-    } catch (_: SocketTimeoutException) {
-        AuthResult.Failure("The request timed out. Check your connection and try again.")
-    } catch (_: IOException) {
-        AuthResult.Failure("Couldn't connect. Check your internet connection and try again.")
-    } catch (_: Exception) {
-        AuthResult.Failure("Something went wrong. Please try again.")
-    }
-
-    private fun call(method: String, path: String, body: JSONObject? = null, token: String? = null): AuthResponse {
-        if (transport != null) return transport.request(method, path, body, token)
-        val connection = URL("${requireNotNull(baseUrl)}/auth/v1$path").openConnection() as HttpURLConnection
         try {
-            connection.instanceFollowRedirects = false
-            connection.requestMethod = method
-            connection.connectTimeout = 4_000
-            connection.readTimeout = 4_000
-            connection.setRequestProperty("apikey", publicKey)
-            connection.setRequestProperty("Authorization", "Bearer ${token ?: publicKey}")
-            connection.setRequestProperty("Accept", "application/json")
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val responseBody = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            return AuthResponse(code, responseBody)
-        } finally {
-            connection.disconnect()
+            supabase.auth.signOut()
+            _authState.value = AuthState.Unauthenticated
+            AuthResult.Success
+        } catch (e: Exception) {
+            AuthResult.Failure(e.message ?: "Failed to sign out")
         }
     }
+
+    override suspend fun deleteAccount(): AuthResult = withContext(Dispatchers.IO) {
+        // Safe implementation via RPC or backend. For now, since no service key, we just error or sign out.
+        // The prompt says "Account deletion must use a trusted authenticated server-side flow. Never expose a service role credential in the client."
+        // We can call an RPC function.
+        try {
+            supabase.postgrest.rpc("delete_user_account")
+            supabase.auth.signOut()
+            _authState.value = AuthState.Unauthenticated
+            AuthResult.Success
+        } catch (e: Exception) {
+            AuthResult.Failure("Could not delete account. ${e.message}")
+        }
+    }
+
+    override suspend fun requestOtp(phone: String): AuthResult = AuthResult.Failure("Phone auth not implemented")
+    override suspend fun verifyOtp(phone: String, token: String): AuthResult = AuthResult.Failure("Phone auth not implemented")
 }
