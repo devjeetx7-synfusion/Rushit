@@ -59,17 +59,12 @@ fun SplashScreen(state: AuthState, onFinished: (String) -> Unit) {
     val finish by rememberUpdatedState(onFinished)
     LaunchedEffect(Unit) { entered = true }
     LaunchedEffect(state) {
-        if (state !is AuthState.Loading && !routed) {
+        val route = startupRouteFor(state)
+        if (route != null && !routed) {
             // Let the first visible frame and NavHost attach without adding a startup timer.
             withFrameNanos { }
             routed = true
-            finish(
-                when (state) {
-                    is AuthState.Authenticated -> "home"
-                    is AuthState.ProfileIncomplete -> "profile-setup"
-                    else -> "login"
-                }
-            )
+            finish(route)
         }
     }
     // A fast session check can finish before the animation starts: content must never start invisible.
@@ -118,4 +113,17 @@ private fun SplashProgress() {
         drawRoundRect(Peach, cornerRadius = radius)
         drawRoundRect(Coral, topLeft = Offset(size.width * offset, 0f), size = Size(size.width * .48f, size.height), cornerRadius = radius)
     }
+}
+
+/**
+ * The start destination for a resolved authentication state, or null while the state is still
+ * transient. Kept pure and internal so the routing decision is unit-testable: showing the login
+ * screen for a moment while a valid session is being restored is exactly the bug this prevents.
+ */
+internal fun startupRouteFor(state: AuthState): String? = when (state) {
+    is AuthState.Authenticated -> "home"
+    is AuthState.ProfileIncomplete -> "profile-setup"
+    AuthState.Unauthenticated -> "login"
+    is AuthState.RecoverableError -> "login"
+    AuthState.Loading, AuthState.Authenticating -> null
 }

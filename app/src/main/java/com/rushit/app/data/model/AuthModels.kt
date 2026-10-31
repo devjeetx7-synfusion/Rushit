@@ -36,10 +36,17 @@ data class UserDevice(
     @SerialName("created_at") val createdAt: String? = null
 )
 
+/**
+ * A minimal, non-sensitive activity record.
+ *
+ * [metadata] must never carry tokens, emails, phone numbers, or device identifiers: the table is
+ * readable by the account owner and is kept only to explain account events.
+ */
 @Serializable
 data class UserActivityLog(
     @SerialName("id") val id: String? = null,
     @SerialName("user_id") val userId: String,
     @SerialName("event_type") val eventType: String,
+    @SerialName("metadata") val metadata: Map<String, String> = emptyMap(),
     @SerialName("created_at") val createdAt: String? = null
 )

@@ -2,13 +2,16 @@ name: RushIt User Build
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   build-apk:
-    name: Build and verify signed debug APK
+    name: Test, build and verify the signed debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -29,7 +32,7 @@ jobs:
           cmdline-tools-version: '12266719'
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
-      - name: Build the signed debug APK
+      - name: Run unit tests and build the signed debug APK
         shell: bash
         env:
           # These optional values are bundled in the APK; never use privileged credentials.
@@ -37,7 +40,13 @@ jobs:
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
           RUSHIT_TERMS_URL: ${{ vars.RUSHIT_TERMS_URL }}
           RUSHIT_PRIVACY_URL: ${{ vars.RUSHIT_PRIVACY_URL }}
-        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          # Google Sign-In is the only authentication method, so the auth unit tests must pass
+          # before an APK is produced. They run on the JVM: no emulator, no credentials, no network.
+          ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+          ./gradlew :app:assembleDebug --no-daemon --console=plain
 
       - name: Verify APK identity and signature
         shell: bash
@@ -80,6 +89,14 @@ jobs:
           fi
           echo "Verified com.rushit.app test APK with versionCode $version_code."
           echo "Debug certificate SHA-256: ${certificate,,}"
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rushit-user-unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
 
       - name: Upload RushIt User APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
