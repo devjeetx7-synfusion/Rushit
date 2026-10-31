@@ -269,7 +269,28 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         LaunchedEffect(id) { shop.recordView(id) }
                         if (!needsStartupRoute) ProductDetailsScreen(shopState, id,
                             onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity, onWishlist = shop::toggleWishlist,
-                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onRetry = shop::loadCatalog, onProduct = ::openProduct)
+                            onCart = { nav.navigate("cart") { launchSingleTop = true } }, onCheckout = { nav.navigate("checkout") { launchSingleTop = true } }, onRetry = shop::loadCatalog, onProduct = ::openProduct,
+                            onFullDetails = { nav.navigate("product-details-full/${android.net.Uri.encode(id)}") { launchSingleTop = true } },
+                            onReviews = { nav.navigate("product-reviews/${android.net.Uri.encode(id)}") { launchSingleTop = true } },
+                            onComments = { nav.navigate("product-comments/${android.net.Uri.encode(id)}") { launchSingleTop = true } },
+                            onHelpfulReview = shop::markReviewHelpful,
+                            onHelpfulComment = shop::markCommentHelpful,
+                            onHelpfulQuestion = shop::markQuestionHelpful,
+                            onSubmitReview = { shop.submitReview(id, it) },
+                            onSubmitComment = { shop.submitComment(id, it) },
+                            onSubmitQuestion = { shop.submitQuestion(id, it) })
+                    }
+                    composable("product-details-full/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        val id = backStackEntry.arguments?.getString("id").orEmpty()
+                        if (!needsStartupRoute) com.rushit.app.ui.screens.store.FullProductDetailsScreen(shopState, id, onBack = { nav.popBackStack() })
+                    }
+                    composable("product-reviews/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        val id = backStackEntry.arguments?.getString("id").orEmpty()
+                        if (!needsStartupRoute) com.rushit.app.ui.screens.store.ProductReviewsScreen(shopState, id, onBack = { nav.popBackStack() }, onHelpfulReview = shop::markReviewHelpful, onSubmitReview = { shop.submitReview(id, it) })
+                    }
+                    composable("product-comments/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { backStackEntry ->
+                        val id = backStackEntry.arguments?.getString("id").orEmpty()
+                        if (!needsStartupRoute) com.rushit.app.ui.screens.store.ProductCommentsScreen(shopState, id, onBack = { nav.popBackStack() }, onHelpfulComment = shop::markCommentHelpful, onHelpfulQuestion = shop::markQuestionHelpful, onSubmitComment = { shop.submitComment(id, it) }, onSubmitQuestion = { shop.submitQuestion(id, it) })
                     }
                     composable("cart") {
                         if (!needsStartupRoute) CartScreen(shopState, onBack = { nav.popBackStack() }, onChangeQuantity = shop::changeQuantity,

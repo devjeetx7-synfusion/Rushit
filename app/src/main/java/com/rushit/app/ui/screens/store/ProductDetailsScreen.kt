@@ -37,6 +37,15 @@ fun ProductDetailsScreen(
     onCheckout: () -> Unit,
     onRetry: () -> Unit,
     onProduct: (String) -> Unit,
+    onFullDetails: () -> Unit,
+    onReviews: () -> Unit,
+    onComments: () -> Unit,
+    onHelpfulReview: (String) -> Unit,
+    onHelpfulComment: (String) -> Unit,
+    onHelpfulQuestion: (String) -> Unit,
+    onSubmitReview: (Review) -> Unit,
+    onSubmitComment: (Comment) -> Unit,
+    onSubmitQuestion: (Question) -> Unit,
 ) {
     val product = remember(state.products, productId) { state.products.firstOrNull { it.id == productId } }
     var selectedVariantId by remember { mutableStateOf<String?>(null) }
@@ -76,49 +85,12 @@ fun ProductDetailsScreen(
             val mainMedia = variantMedia.find { it.id == selectedMediaId } ?: variantMedia.firstOrNull()
 
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-                // Main Media View
-                Box(Modifier.fillMaxWidth().height(250.dp).background(Peach, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
-                    if (mainMedia != null) {
-                        if (mainMedia.type == MediaType.VIDEO) {
-                            Text("Video Preview (Demo)", style = MaterialTheme.typography.titleLarge, color = Coral)
-                        } else {
-                            CatalogImage(mainMedia.url, mainMedia.resId ?: product.imageRes, product.name, Modifier.size(220.dp))
-                        }
-                    } else {
-                        CatalogImage(product.imageUrl, product.imageRes, product.name, Modifier.size(220.dp))
-                    }
-                    RoundIconButton(if (product.id in state.wishlist) R.drawable.ic_heart_filled else R.drawable.ic_heart,
-                        if (product.id in state.wishlist) "Remove ${product.name} from wishlist" else "Save ${product.name} to wishlist",
-                        { onWishlist(product.id) }, modifier = Modifier.align(Alignment.TopEnd).padding(10.dp), background = CardWhite, tint = Coral)
-                }
-                
-                // Media Thumbnails
-                if (variantMedia.size > 1) {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(variantMedia) { media ->
-                            Box(
-                                modifier = Modifier
-                                    .size(60.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Peach)
-                                    .border(2.dp, if (media.id == selectedMediaId || (selectedMediaId == null && media == variantMedia.first())) Coral else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .clickable { selectedMediaId = media.id },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (media.type == MediaType.VIDEO) {
-                                    Text("▶", style = MaterialTheme.typography.bodyLarge, color = Coral)
-                                } else {
-                                    CatalogImage(media.url, media.resId, "Thumbnail", Modifier.size(50.dp))
-                                }
-                            }
-                        }
-                    }
-                }
+                SwipeableProductMediaGallery(product.media.ifEmpty { listOf(com.rushit.app.data.model.ProductMedia("1", product.imageUrl, product.imageRes)) }, product.name)
 
                 Spacer(Modifier.height(18.dp))
+                if (product.brand != null) {
+                    Text(product.brand.uppercase(), style = MaterialTheme.typography.labelSmall, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
+                }
                 Text(product.name, style = MaterialTheme.typography.headlineMedium, color = Ink)
                 if (product.rating != null) {
                     Text("⭐ ${product.rating} (${product.reviewCount} reviews)", style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.padding(top = 4.dp))
@@ -179,43 +151,42 @@ fun ProductDetailsScreen(
                 }
 
                 Text("About this product", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                Text(product.description.ifBlank { "Product information is not configured yet." }, style = MaterialTheme.typography.bodyMedium, color = Muted)
-                
-                if (product.specifications.isNotEmpty()) {
-                    ExpandableSection("Specifications") {
-                        product.specifications.forEach { (key, value) ->
-                            Row(modifier = Modifier.padding(bottom = 4.dp)) {
-                                Text("$key: ", style = MaterialTheme.typography.bodyMedium, color = Ink)
-                                Text(value, style = MaterialTheme.typography.bodyMedium, color = Muted)
-                            }
-                        }
-                    }
-                }
+                Text(product.description.take(150) + if(product.description.length > 150) "..." else "", style = MaterialTheme.typography.bodyMedium, color = Muted)
                 
                 if (product.keyFeatures.isNotEmpty()) {
-                    ExpandableSection("Key Features") {
-                        product.keyFeatures.forEach { feature ->
-                            Text("• $feature", style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.padding(bottom = 4.dp))
+                    Spacer(Modifier.height(8.dp))
+                    product.keyFeatures.take(2).forEach { feature ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.Top) {
+                            Text("•", style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.padding(end = 8.dp))
+                            Text(feature, style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.weight(1f))
                         }
                     }
                 }
 
-                if (product.whatsInTheBox != null) ExpandableSection("What's in the Box") { Text(product.whatsInTheBox, style = MaterialTheme.typography.bodyMedium, color = Muted) }
-                if (product.careInstructions != null) ExpandableSection("Care Instructions") { Text(product.careInstructions, style = MaterialTheme.typography.bodyMedium, color = Muted) }
-                if (product.warranty != null) ExpandableSection("Warranty") { Text(product.warranty, style = MaterialTheme.typography.bodyMedium, color = Muted) }
-                if (product.returnPolicy != null) ExpandableSection("Return Policy") { Text(product.returnPolicy, style = MaterialTheme.typography.bodyMedium, color = Muted) }
-                if (product.sellerInformation != null) ExpandableSection("Seller Information") { Text(product.sellerInformation, style = MaterialTheme.typography.bodyMedium, color = Muted) }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth().clickable { onFullDetails() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("View Full Product Details", style = MaterialTheme.typography.labelLarge, color = Coral, modifier = Modifier.weight(1f))
+                    Text("→", style = MaterialTheme.typography.labelLarge, color = Coral)
+                }
+                
+                HorizontalDivider(color = Border)
 
                 ProductOffers(product.availableOffers)
                 PincodeChecker()
                 
-                // Get reviews/comments from state (assuming we pass them or use empty for now if not passed, but we will pass them via state)
-                // We don't have them in state yet, let's just use empty lists if not found
-                // Wait, ShopUiState doesn't have reviews yet. Let's add them to ShopUiState.
+                ProductReviewsSection(state.reviews(product.id).take(2), onHelpful = onHelpfulReview, onSubmitReview = { r -> onSubmitReview(r.copy(productId = product.id)) })
+                Row(Modifier.fillMaxWidth().clickable { onReviews() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("View All Reviews", style = MaterialTheme.typography.labelLarge, color = Coral, modifier = Modifier.weight(1f))
+                    Text("→", style = MaterialTheme.typography.labelLarge, color = Coral)
+                }
+
+                ProductQASection(state.comments(product.id).take(2), state.questions(product.id).take(2), onHelpfulComment = onHelpfulComment, onHelpfulQuestion = onHelpfulQuestion, onSubmitComment = { c -> onSubmitComment(c.copy(productId = product.id)) }, onSubmitQuestion = { q -> onSubmitQuestion(q.copy(productId = product.id)) })
+                Row(Modifier.fillMaxWidth().clickable { onComments() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("View All Comments & Q&A", style = MaterialTheme.typography.labelLarge, color = Coral, modifier = Modifier.weight(1f))
+                    Text("→", style = MaterialTheme.typography.labelLarge, color = Coral)
+                }
                 
-                ProductReviewsSection(state.reviews(product.id))
-                ProductQASection(state.comments(product.id), state.questions(product.id))
-                
+                FrequentlyBoughtTogether(product, state.recommendations(product.id), onAddToCart = { id -> onChangeQuantity(id, null, 1) })
                 ProductRecommendations("Similar Products", state.recommendations(product.id), onProduct = onProduct)
                 ProductRecommendations("Recently Viewed", state.recentlyViewedProducts(product.id), onProduct = onProduct)
 

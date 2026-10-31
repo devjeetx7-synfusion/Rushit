@@ -33,7 +33,12 @@ class SampleCatalogRepository : CatalogRepository {
                 Category("g_occasions", "Special Occasions", imageRes = R.drawable.gift_bouquet, sortOrder = 4, mode = ShoppingMode.GIFTS),
             ),
             products = listOf(
-                Product("tomato", "Tomato", "A sample listing of fresh tomatoes.", "produce", imageRes = R.drawable.product_tomatoes, pricePaise = 2_400, unit = "1 kg", isBestseller = true),
+                Product("tomato", "Tomato", "Farm fresh red tomatoes.", "produce", imageRes = R.drawable.product_tomatoes, pricePaise = 2_400, originalPricePaise = 3_000, unit = "1 kg", isBestseller = true,
+                    keyFeatures = listOf("Sourced directly from local farms", "Rich in Vitamin C", "Ideal for salads and cooking"),
+                    careInstructions = "Store in a cool, dry place. Wash before use.",
+                    returnPolicy = "No returns for perishable goods.",
+                    tags = listOf("fresh", "vegetable", "organic")
+                ),
                 Product("banana", "Banana", "A sample listing of ripe bananas.", "produce", imageRes = R.drawable.product_bananas, pricePaise = 3_600, unit = "1 kg", isBestseller = true),
                 Product("milk", "Fresh Milk", "A sample listing of milk.", "dairy", imageRes = R.drawable.product_milk, pricePaise = 5_800, unit = "1 L", isBestseller = true),
                 Product("chips", "Potato Chips", "A sample listing of potato chips.", "snacks", imageRes = R.drawable.category_snacks, pricePaise = 2_000, unit = "50 g"),
