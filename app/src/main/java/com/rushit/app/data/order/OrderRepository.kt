@@ -21,6 +21,7 @@ data class OrderDraft(
     val platformFeePaise: Long,
     val deliveryFeePaise: Long,
     val discountPaise: Long = 0,
+    val paymentMethod: String = "COD",
 )
 
 interface OrderRepository {
@@ -82,6 +83,8 @@ class LocalOrderRepository internal constructor(
                 updatedAt = timestamp,
                 mode = draft.mode,
                 addressSummary = draft.addressSummary,
+                paymentMethod = draft.paymentMethod,
+                paymentStatus = if (draft.paymentMethod == "Cash on Delivery" || draft.paymentMethod == "COD") "Pending" else "Success",
                 isDemo = true,
             )
             val all = readAll()
@@ -154,11 +157,15 @@ class LocalOrderRepository internal constructor(
         put("mode", order.mode.name)
         put("address", order.addressSummary)
         put("demo", order.isDemo)
+        put("paymentMethod", order.paymentMethod)
+        put("paymentStatus", order.paymentStatus)
         put("celebratedAt", order.celebratedAt)
         put("items", JSONArray().apply {
             order.items.forEach { line ->
                 put(JSONObject().apply {
                     put("productId", line.productId)
+                    put("variantId", line.variantId)
+                    put("variantName", line.variantName)
                     put("name", line.name)
                     put("unit", line.unit)
                     put("quantity", line.quantity)
@@ -181,6 +188,8 @@ class LocalOrderRepository internal constructor(
                     add(
                         OrderLine(
                             productId = line.optString("productId"),
+                            variantId = line.optString("variantId").takeIf { it.isNotBlank() && it != "null" },
+                            variantName = line.optString("variantName").takeIf { it.isNotBlank() && it != "null" },
                             name = line.optString("name"),
                             unit = line.optString("unit"),
                             quantity = line.optInt("quantity"),
@@ -206,6 +215,8 @@ class LocalOrderRepository internal constructor(
             updatedAt = json.optString("updatedAt", createdAt),
             mode = runCatching { ShoppingMode.valueOf(json.optString("mode")) }.getOrDefault(ShoppingMode.GROCERY),
             addressSummary = json.optString("address").takeIf { it.isNotBlank() && it != "null" },
+            paymentMethod = json.optString("paymentMethod", "COD"),
+            paymentStatus = json.optString("paymentStatus", "Pending"),
             isDemo = json.optBoolean("demo", true),
             celebratedAt = json.optString("celebratedAt").takeIf { it.isNotBlank() && it != "null" },
         )

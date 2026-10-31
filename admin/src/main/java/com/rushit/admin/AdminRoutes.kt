@@ -33,6 +33,8 @@ object AdminRoutes {
     const val PROFILE = "profile"
     const val ROLES = "roles"
     const val ACTIVITY_LOGS = "activity_logs"
+    const val PAYMENTS = "payments"
+    const val PAYOUTS = "payouts"
 
     val rootTabs = listOf(HOME, CATALOG, ORDERS, THEMES, MORE)
 

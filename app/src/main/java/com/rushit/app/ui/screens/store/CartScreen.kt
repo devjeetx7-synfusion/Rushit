@@ -52,11 +52,19 @@ import com.rushit.app.ui.theme.SoftRed
 import com.rushit.app.ui.viewmodel.ShopUiState
 
 @Composable
-fun CartScreen(state: ShopUiState, onBack: () -> Unit, onChangeQuantity: (String, Int) -> Unit, onCheckout: () -> Unit, onAddress: () -> Unit, onProduct: (String) -> Unit) {
-    val products = remember(state.products, state.cart) { state.products.filter { (state.cart[it.id] ?: 0) > 0 } }
+fun CartScreen(state: ShopUiState, onBack: () -> Unit, onChangeQuantity: (String, String?, Int) -> Unit, onCheckout: () -> Unit, onAddress: () -> Unit, onProduct: (String) -> Unit) {
+    // Generate a list of cart items
+    val cartItems = remember(state.products, state.cart) {
+        state.cart.mapNotNull { (key, quantity) ->
+            if (quantity <= 0) return@mapNotNull null
+            val (productId, variantId) = com.rushit.app.domain.parseCartKey(key)
+            val product = state.products.firstOrNull { it.id == productId } ?: return@mapNotNull null
+            Triple(product, variantId, quantity)
+        }
+    }
     Column(Modifier.fillMaxSize().background(Cream)) {
         ScreenHeader("Your cart", onBack)
-        if (products.isEmpty()) {
+        if (cartItems.isEmpty()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 MessageCard("Your ${state.selectedMode.label} cart is empty", "Add a few favorites to see them here. Carts are kept separately for each mode.",
                     Modifier.padding(16.dp), action = "Continue shopping", onAction = onBack)
@@ -67,9 +75,9 @@ fun CartScreen(state: ShopUiState, onBack: () -> Unit, onChangeQuantity: (String
                     Text(if (state.isSample) "${state.selectedMode.label} sample cart · Prices are illustrative" else "${state.selectedMode.label} cart",
                         color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 4.dp))
                 }
-                items(products, key = { it.id }) { product ->
-                    CartLine(product, state.cart[product.id] ?: 0, onMinus = { onChangeQuantity(product.id, -1) },
-                        onPlus = { onChangeQuantity(product.id, 1) }, onOpen = { onProduct(product.id) })
+                items(cartItems, key = { com.rushit.app.domain.cartKey(it.first.id, it.second) }) { (product, variantId, quantity) ->
+                    CartLine(product, variantId, quantity, onMinus = { onChangeQuantity(product.id, variantId, -1) },
+                        onPlus = { onChangeQuantity(product.id, variantId, 1) }, onOpen = { onProduct(product.id) })
                 }
                 item(key = "address") {
                     Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
@@ -107,7 +115,10 @@ fun CartScreen(state: ShopUiState, onBack: () -> Unit, onChangeQuantity: (String
 }
 
 @Composable
-private fun CartLine(product: Product, quantity: Int, onMinus: () -> Unit, onPlus: () -> Unit, onOpen: () -> Unit) {
+private fun CartLine(product: Product, variantId: String?, quantity: Int, onMinus: () -> Unit, onPlus: () -> Unit, onOpen: () -> Unit) {
+    val variant = product.variants.find { it.id == variantId }
+    val price = variant?.pricePaise ?: product.pricePaise
+    val stock = variant?.stockQuantity ?: product.stockQuantity
     Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border.copy(alpha = .7f))) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Peach.copy(alpha = .5f)), contentAlignment = Alignment.Center) {
@@ -116,16 +127,19 @@ private fun CartLine(product: Product, quantity: Int, onMinus: () -> Unit, onPlu
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClickLabel = "View ${product.name}", onClick = onOpen)) {
                 Text(product.name, style = MaterialTheme.typography.labelLarge, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (variant != null) {
+                    Text(variant.attributes.entries.joinToString(", ") { "${it.key}: ${it.value}" }, style = MaterialTheme.typography.bodySmall, color = Muted)
+                }
                 Text(product.unit, style = MaterialTheme.typography.bodySmall, color = Muted)
                 Spacer(Modifier.height(4.dp))
-                Text(formatPrice(product.pricePaise * quantity), style = MaterialTheme.typography.labelLarge, color = Ink)
+                Text(formatPrice(price * quantity), style = MaterialTheme.typography.labelLarge, color = Ink)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     QuantityButton(R.drawable.ic_minus_sign, "Remove one ${product.name}", onMinus)
                     Text("$quantity", style = MaterialTheme.typography.labelMedium, color = Ink)
                     QuantityButton(R.drawable.ic_add_01, "Add one ${product.name}", onPlus,
-                        enabled = !product.previewOnly && product.isAvailable && quantity < (product.stockQuantity?.coerceAtMost(99) ?: 99))
+                        enabled = !product.previewOnly && product.isAvailable && quantity < (stock?.coerceAtMost(99) ?: 99))
                 }
             }
         }

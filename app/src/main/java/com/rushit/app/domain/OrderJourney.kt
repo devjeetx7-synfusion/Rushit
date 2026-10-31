@@ -80,15 +80,21 @@ fun shouldCelebrate(order: Order): Boolean =
 
 /** Builds the immutable order lines for the products currently in a cart. */
 fun orderLinesFor(cart: Map<String, Int>, products: List<Product>): List<OrderLine> =
-    products.mapNotNull { product ->
-        val quantity = cart[product.id] ?: 0
+    cart.mapNotNull { (key, quantity) ->
         if (quantity <= 0) return@mapNotNull null
+        val (productId, variantId) = parseCartKey(key)
+        val product = products.firstOrNull { it.id == productId } ?: return@mapNotNull null
+        val variant = product.variants.find { it.id == variantId }
+        val price = variant?.pricePaise ?: product.pricePaise
+        val variantName = variant?.attributes?.entries?.joinToString(", ") { "${it.key}: ${it.value}" }
         OrderLine(
             productId = product.id,
+            variantId = variantId,
+            variantName = variantName,
             name = product.name,
             unit = product.unit,
             quantity = quantity,
-            unitPricePaise = product.pricePaise,
+            unitPricePaise = price,
             imageRes = product.imageRes,
             imageUrl = product.imageUrl,
         )
