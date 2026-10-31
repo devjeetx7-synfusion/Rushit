@@ -38,7 +38,7 @@ The **RushIt User Build** GitHub Actions workflow runs on pull requests, pushes 
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
 ```
 
-After the build, it checks the package ID, exact run version code, configured Google Web Client ID in BuildConfig/DEX, and APK signature. It prints only the public certificate SHA-1/SHA-256 fingerprints. Successful runs upload **`rushit-user-apk`** (containing `app-debug.apk`); **`rushit-user-unit-test-reports`** contains the HTML unit-test report. Existing pull-request failure comments are retained. A failed preflight, test, build, or APK check does not produce a successful APK artifact.
+After the build, it checks the package ID, exact run version code, configured Google Web Client ID in BuildConfig/DEX, and APK signature. It prints only the public certificate SHA-1/SHA-256 fingerprints. Successful runs upload **`rushit-user-apk`** (containing `app-debug.apk`); **`rushit-user-unit-test-reports`** contains the HTML unit-test report and JUnit XML results. Existing pull-request failure comments are retained. A failed preflight, test, build, or APK check does not produce a successful APK artifact.
 
 ### Create the persistent test keystore once
 
@@ -116,7 +116,7 @@ Android accepts a normal in-place update when the package ID and signing certifi
 
 1. Under **Actions → RushIt User Build → Run workflow**, select a branch containing this workflow and run it; select `main` after merging. Only run trusted code with access to signing Secrets.
 2. Open the successful run. Confirm the version code and public certificate fingerprints in **Verify APK identity, configuration and signature** (also in the run summary). Compare the fingerprints with an earlier configured run; they must match.
-3. Download **`rushit-user-apk`** from **Artifacts** and unzip it to obtain **`app-debug.apk`**. Download **`rushit-user-unit-test-reports`** and open its `index.html` for test details. The workflow name and artifact name are different; use the exact lowercase artifact name.
+3. Download **`rushit-user-apk`** from **Artifacts** and unzip it to obtain **`app-debug.apk`**. Download **`rushit-user-unit-test-reports`** and open `reports/tests/testDebugUnitTest/index.html` for test details; the JUnit XML files are under `test-results/testDebugUnitTest/`. The workflow name and artifact name are different; use the exact lowercase artifact name.
 4. With Android SDK platform-tools/build-tools available, inspect and install:
 
    ```sh
