@@ -9,7 +9,10 @@ import io.github.jan.supabase.gotrue.exception.AuthSessionMissingException
 import io.ktor.client.request.HttpRequestBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -29,6 +32,19 @@ import java.net.UnknownHostException
  */
 class AuthErrorsTest {
 
+    /**
+     * [TimeoutCancellationException]'s constructor is internal, so a real one has to be produced by
+     * actually timing out. The classification under test is the same either way.
+     */
+    private fun timeoutException(): TimeoutCancellationException = runBlocking {
+        try {
+            withTimeout(1L) { delay(2_000L) }
+            throw IllegalStateException("withTimeout should have thrown")
+        } catch (error: TimeoutCancellationException) {
+            error
+        }
+    }
+
     @Test
     fun `connectivity failures are explained as connectivity failures`() {
         listOf(
@@ -45,9 +61,9 @@ class AuthErrorsTest {
 
     @Test
     fun `timeouts are distinguished from being offline`() {
-        assertEquals(AuthFailureKind.TIMEOUT, AuthErrors.describe(TimeoutCancellationException()).kind)
+        assertEquals(AuthFailureKind.TIMEOUT, AuthErrors.describe(timeoutException()).kind)
         assertEquals(AuthFailureKind.TIMEOUT, AuthErrors.describe(SocketTimeoutException()).kind)
-        assertTrue(AuthErrors.describe(TimeoutCancellationException()).message.contains("too long"))
+        assertTrue(AuthErrors.describe(timeoutException()).message.contains("too long"))
     }
 
     @Test
@@ -160,7 +176,7 @@ class AuthErrorsTest {
 
     @Test
     fun `a timeout is a failure, not a cancellation`() {
-        val failure = AuthErrors.describeOrRethrow(TimeoutCancellationException())
+        val failure = AuthErrors.describeOrRethrow(timeoutException())
 
         assertEquals(AuthFailureKind.TIMEOUT, failure.kind)
     }
