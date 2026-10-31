@@ -40,7 +40,7 @@ fun ExpandableSection(title: String, content: @Composable () -> Unit) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.weight(1f))
             Text(if (expanded) "−" else "+", style = MaterialTheme.typography.titleMedium, color = Coral)
         }
-        if (expanded) {
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
             Box(Modifier.padding(vertical = 8.dp)) {
                 content()
             }
@@ -69,34 +69,67 @@ fun ProductOffers(offers: List<String>) {
 fun PincodeChecker() {
     var pincode by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    
     Column(Modifier.padding(vertical = 12.dp)) {
         Text("Check Delivery Options", style = MaterialTheme.typography.titleMedium, color = Ink)
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = pincode,
-                onValueChange = { pincode = it.take(6) },
-                placeholder = { Text("Enter Pincode") },
-                modifier = Modifier.weight(1f).height(50.dp),
-                textStyle = MaterialTheme.typography.bodyMedium
+                onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) pincode = it },
+                placeholder = { Text("Enter 6-digit Pincode", color = Muted) },
+                modifier = Modifier.weight(1f).height(54.dp),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Coral,
+                    unfocusedBorderColor = Border,
+                    focusedContainerColor = CardWhite,
+                    unfocusedContainerColor = CardWhite
+                ),
+                trailingIcon = {
+                    if (pincode.isNotEmpty()) {
+                        RushIcon(R.drawable.ic_cancel_01, "Clear", Modifier.size(16.dp).clickable { pincode = ""; result = null }, Muted)
+                    }
+                }
             )
             Spacer(Modifier.width(8.dp))
             Button(
-                onClick = { result = if (pincode.length == 6) "Delivery available by tomorrow. COD available." else "Invalid pincode" },
+                onClick = { 
+                    if (pincode.length == 6) {
+                        isLoading = true
+                        scope.launch {
+                            kotlinx.coroutines.delay(600)
+                            isLoading = false
+                            result = if (pincode.startsWith("1")) "Delivery not available for this area (Demo)." else "Delivery available in 3 days. COD eligible (Demo)."
+                        }
+                    } else {
+                        result = "Please enter a valid 6-digit pincode."
+                    }
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = Coral),
-                modifier = Modifier.height(50.dp)
+                modifier = Modifier.height(54.dp),
+                shape = RoundedCornerShape(24.dp),
+                enabled = !isLoading
             ) {
-                Text("Check")
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Check", fontWeight = FontWeight.Bold)
+                }
             }
         }
         if (result != null) {
-            Text(result!!, style = MaterialTheme.typography.bodySmall, color = if (result!!.contains("available")) Success else Muted, modifier = Modifier.padding(top = 4.dp))
+            Text(result!!, style = MaterialTheme.typography.bodySmall, color = if (result!!.contains("available in")) Success else Coral, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
         }
     }
 }
 
 @Composable
-fun ProductReviewsSection(reviews: List<Review>) {
+fun ProductReviewsSection(reviews: List<Review>, onHelpful: (String) -> Unit = {}, onSubmitReview: (Review) -> Unit = {}) {
     var filter by remember { mutableStateOf("All") }
     var sort by remember { mutableStateOf("Most Recent") }
     val filters = listOf("All", "5 Star", "4 Star", "With Photos", "With Videos")
@@ -145,7 +178,7 @@ fun ProductReviewsSection(reviews: List<Review>) {
             Text("No reviews found for this filter.", style = MaterialTheme.typography.bodyMedium, color = Muted)
         }
         sorted.forEach { review ->
-            ReviewCard(review)
+            ReviewCard(review, onHelpful)
             Spacer(Modifier.height(12.dp))
         }
         Button(
@@ -160,7 +193,7 @@ fun ProductReviewsSection(reviews: List<Review>) {
 }
 
 @Composable
-fun ReviewCard(review: Review) {
+fun ReviewCard(review: Review, onHelpful: (String) -> Unit = {}) {
     Surface(shape = RoundedCornerShape(12.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -186,7 +219,7 @@ fun ReviewCard(review: Review) {
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Text("Helpful (${review.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral, modifier = Modifier.clickable { /* Demo */ }.padding(end = 12.dp))
+                Text("Helpful (${review.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral, modifier = Modifier.clickable { onHelpful(review.id) }.padding(end = 12.dp))
                 Text("Report", style = MaterialTheme.typography.bodySmall, color = Muted, modifier = Modifier.clickable { /* Demo */ })
             }
         }
@@ -194,7 +227,7 @@ fun ReviewCard(review: Review) {
 }
 
 @Composable
-fun ProductQASection(comments: List<Comment>, questions: List<Question>) {
+fun ProductQASection(comments: List<Comment>, questions: List<Question>, onHelpfulComment: (String) -> Unit = {}, onHelpfulQuestion: (String) -> Unit = {}, onSubmitComment: (Comment) -> Unit = {}, onSubmitQuestion: (Question) -> Unit = {}) {
     var tab by remember { mutableStateOf(0) }
     Column(Modifier.padding(vertical = 16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -208,7 +241,7 @@ fun ProductQASection(comments: List<Comment>, questions: List<Question>) {
                 Column(Modifier.padding(bottom = 12.dp)) {
                     Text("${c.author}: ${c.text}", style = MaterialTheme.typography.bodyMedium, color = Ink)
                     Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Helpful (${c.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral)
+                        Text("Helpful (${c.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral, modifier = Modifier.clickable { onHelpfulComment(c.id) })
                         Text("Reply", style = MaterialTheme.typography.bodySmall, color = Muted)
                         Text("Report", style = MaterialTheme.typography.bodySmall, color = Muted)
                     }
@@ -217,7 +250,17 @@ fun ProductQASection(comments: List<Comment>, questions: List<Question>) {
                     }
                 }
             }
-            Text("+ Add Comment", style = MaterialTheme.typography.labelMedium, color = Coral, modifier = Modifier.clickable { /* Demo */ })
+            var showWriteComment by remember { mutableStateOf(false) }
+            Text("+ Add Comment", style = MaterialTheme.typography.labelMedium, color = Coral, modifier = Modifier.clickable { showWriteComment = true })
+            if (showWriteComment) {
+                var text by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showWriteComment = false },
+                    title = { Text("Add Comment") },
+                    text = { OutlinedTextField(value = text, onValueChange = { text = it }, placeholder = { Text("Write your comment") }) },
+                    confirmButton = { TextButton(onClick = { onSubmitComment(Comment(java.util.UUID.randomUUID().toString(), "", "Demo User", text, "Just now")); showWriteComment = false }) { Text("Submit") } }
+                )
+            }
         } else {
             if (questions.isEmpty()) Text("No questions yet.", style = MaterialTheme.typography.bodyMedium, color = Muted)
             questions.forEach { q ->
@@ -227,12 +270,22 @@ fun ProductQASection(comments: List<Comment>, questions: List<Question>) {
                         Text("A: ${q.answer}", style = MaterialTheme.typography.bodyMedium, color = Muted, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
                     }
                     Row(Modifier.padding(top = 4.dp, start = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Helpful (${q.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral)
+                        Text("Helpful (${q.helpfulCount})", style = MaterialTheme.typography.bodySmall, color = Coral, modifier = Modifier.clickable { onHelpfulQuestion(q.id) })
                         Text("Report", style = MaterialTheme.typography.bodySmall, color = Muted)
                     }
                 }
             }
-            Text("+ Ask a Question", style = MaterialTheme.typography.labelMedium, color = Coral, modifier = Modifier.clickable { /* Demo */ })
+            var showWriteQuestion by remember { mutableStateOf(false) }
+            Text("+ Ask a Question", style = MaterialTheme.typography.labelMedium, color = Coral, modifier = Modifier.clickable { showWriteQuestion = true })
+            if (showWriteQuestion) {
+                var text by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showWriteQuestion = false },
+                    title = { Text("Ask a Question") },
+                    text = { OutlinedTextField(value = text, onValueChange = { text = it }, placeholder = { Text("What do you want to know?") }) },
+                    confirmButton = { TextButton(onClick = { onSubmitQuestion(Question(java.util.UUID.randomUUID().toString(), "", "Demo User", text, "Just now")); showWriteQuestion = false }) { Text("Submit") } }
+                )
+            }
         }
     }
 }
@@ -259,6 +312,71 @@ fun ProductRecommendations(title: String, products: List<Product>, onProduct: (S
                         Text(p.name, style = MaterialTheme.typography.labelMedium, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                         Text(formatPrice(p.pricePaise), style = MaterialTheme.typography.labelLarge, color = Ink)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FrequentlyBoughtTogether(
+    mainProduct: Product,
+    recommendations: List<Product>,
+    onAddToCart: (String) -> Unit
+) {
+    if (recommendations.isEmpty()) return
+    
+    val combo = recommendations.take(2)
+    var selected = remember { mutableStateListOf<Product>().apply { addAll(combo) } }
+    
+    Column(Modifier.padding(vertical = 16.dp)) {
+        Text("Frequently Bought Together (Demo)", style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.padding(horizontal = 20.dp))
+        Spacer(Modifier.height(12.dp))
+        
+        Surface(shape = RoundedCornerShape(12.dp), color = CardWhite, border = BorderStroke(1.dp, Border), modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                // Main Product
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = true, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = Muted, disabledCheckedColor = Muted), enabled = false)
+                    Spacer(Modifier.width(8.dp))
+                    Text("This item: ${mainProduct.name}", style = MaterialTheme.typography.bodyMedium, color = Ink, modifier = Modifier.weight(1f))
+                    Text(formatPrice(mainProduct.pricePaise), style = MaterialTheme.typography.labelMedium, color = Ink)
+                }
+                
+                // Recommended Products
+                combo.forEach { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Checkbox(
+                            checked = selected.contains(p),
+                            onCheckedChange = { if (it) selected.add(p) else selected.remove(p) },
+                            colors = CheckboxDefaults.colors(checkedColor = Coral)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(p.name, style = MaterialTheme.typography.bodyMedium, color = Ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(formatPrice(p.pricePaise), style = MaterialTheme.typography.labelMedium, color = Ink)
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = Border)
+                Spacer(Modifier.height(12.dp))
+                
+                val total = mainProduct.pricePaise + selected.sumOf { it.pricePaise }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Total Price:", style = MaterialTheme.typography.bodySmall, color = Muted)
+                        Text(formatPrice(total), style = MaterialTheme.typography.titleMedium, color = Ink)
+                    }
+                    Button(
+                        onClick = { 
+                            onAddToCart(mainProduct.id)
+                            selected.forEach { onAddToCart(it.id) }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("Add Selected to Cart")
                     }
                 }
             }

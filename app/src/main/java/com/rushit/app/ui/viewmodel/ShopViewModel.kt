@@ -280,6 +280,40 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
         _state.update { it.copy(recentlyViewed = updated) }
     }
 
+
+    fun submitReview(productId: String, review: com.rushit.app.data.model.Review) {
+        _state.update { it.copy(allReviews = listOf(review) + it.allReviews) }
+    }
+
+    fun submitComment(productId: String, comment: com.rushit.app.data.model.Comment) {
+        _state.update { it.copy(allComments = listOf(comment) + it.allComments) }
+    }
+
+    fun submitQuestion(productId: String, question: com.rushit.app.data.model.Question) {
+        _state.update { it.copy(allQuestions = listOf(question) + it.allQuestions) }
+    }
+
+    fun markReviewHelpful(reviewId: String) {
+        _state.update { 
+            val updated = it.allReviews.map { r -> if (r.id == reviewId) r.copy(helpfulCount = r.helpfulCount + 1) else r }
+            it.copy(allReviews = updated) 
+        }
+    }
+
+    fun markCommentHelpful(commentId: String) {
+        _state.update { 
+            val updated = it.allComments.map { c -> if (c.id == commentId) c.copy(helpfulCount = c.helpfulCount + 1) else c }
+            it.copy(allComments = updated) 
+        }
+    }
+
+    fun markQuestionHelpful(questionId: String) {
+        _state.update { 
+            val updated = it.allQuestions.map { q -> if (q.id == questionId) q.copy(helpfulCount = q.helpfulCount + 1) else q }
+            it.copy(allQuestions = updated) 
+        }
+    }
+
     private fun readRecentlyViewed(): List<String> =
         prefs.getString("recently_viewed", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
 
