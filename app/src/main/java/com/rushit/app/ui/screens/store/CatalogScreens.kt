@@ -1,5 +1,5 @@
-import androidx.compose.foundation.BorderStroke
 package com.rushit.app.ui.screens.store
+import androidx.compose.foundation.BorderStroke
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
