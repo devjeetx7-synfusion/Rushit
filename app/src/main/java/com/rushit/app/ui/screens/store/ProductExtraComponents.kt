@@ -1,3 +1,4 @@
+import kotlinx.coroutines.launch
 package com.rushit.app.ui.screens.store
 
 import androidx.compose.foundation.BorderStroke
@@ -80,7 +81,7 @@ fun PincodeChecker() {
                 value = pincode,
                 onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) pincode = it },
                 placeholder = { Text("Enter 6-digit Pincode", color = Muted) },
-                modifier = Modifier.weight(1f).height(54.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 54.dp),
                 textStyle = MaterialTheme.typography.bodyMedium,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                 shape = RoundedCornerShape(24.dp),
@@ -111,7 +112,7 @@ fun PincodeChecker() {
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Coral),
-                modifier = Modifier.height(54.dp),
+                modifier = Modifier.heightIn(min = 54.dp),
                 shape = RoundedCornerShape(24.dp),
                 enabled = !isLoading
             ) {
