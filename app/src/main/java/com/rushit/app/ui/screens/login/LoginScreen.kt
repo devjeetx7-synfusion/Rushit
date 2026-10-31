@@ -1,17 +1,12 @@
 package com.rushit.app.ui.screens.login
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,18 +16,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -41,8 +30,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,26 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.rushit.app.BuildConfig
 import com.rushit.app.R
-import com.rushit.app.domain.isValidIndianMobile
 import com.rushit.app.ui.components.RushButton
 import com.rushit.app.ui.components.RushIcon
 import com.rushit.app.ui.components.RushWordmark
@@ -79,34 +57,28 @@ import com.rushit.app.ui.theme.CardWhite
 import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.DeepRed
-import com.rushit.app.ui.theme.FlagBlue
-import com.rushit.app.ui.theme.FlagGreen
-import com.rushit.app.ui.theme.FlagSaffron
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
-import com.rushit.app.ui.viewmodel.AuthUiState
+import com.rushit.app.data.auth.AuthState
 import java.net.URI
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
-    state: AuthUiState,
-    onPhoneChange: (String) -> Unit,
-    onContinue: () -> Unit,
+    authState: AuthState,
+    errorMessage: String?,
+    onGoogleSignIn: () -> Unit,
     onBrowseSample: () -> Unit,
+    onClearError: () -> Unit
 ) {
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogTitle by rememberSaveable { mutableStateOf("How can we help?") }
     val uriHandler = LocalUriHandler.current
     val largeText = LocalConfiguration.current.fontScale > 1.2f
-    val validPhone = isValidIndianMobile(state.phone)
-    val continueRequester = remember { BringIntoViewRequester() }
-    var phoneFocused by remember { mutableStateOf(false) }
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    LaunchedEffect(phoneFocused, imeVisible) {
-        if (phoneFocused && imeVisible) continueRequester.bringIntoView()
-    }
+    val context = LocalContext.current
+
+    val isBusy = authState == AuthState.Authenticating || authState == AuthState.Loading
 
     fun openPolicy(url: String, title: String) {
         dialogTitle = title
@@ -122,7 +94,7 @@ fun LoginScreen(
         val heroSpacing = (maxHeight * .022f).coerceIn(8.dp, 18.dp)
         val heroHeight = (maxHeight * .30f).coerceIn(218.dp, 260.dp)
         Column(
-            Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(14.dp))
@@ -133,7 +105,7 @@ fun LoginScreen(
                 }
                 Row(
                     Modifier.heightIn(min = 48.dp).clip(CircleShape).background(Peach)
-                        .clickable(role = Role.Button, onClickLabel = "Open help") { dialogTitle = "How can we help?"; dialog = "Enter your Indian mobile number to receive a one-time SMS code. If a code doesn't arrive, check your connection and try again. Phone sign-in requires the store's SMS provider to be configured. You can also browse the sample store without signing in." }
+                        .clickable(role = Role.Button, onClickLabel = "Open help") { dialogTitle = "How can we help?"; dialog = "Sign in using your Google account. You can also browse the sample store without signing in." }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -158,25 +130,16 @@ fun LoginScreen(
             Spacer(Modifier.height(20.dp))
             Surface(shape = RoundedCornerShape(24.dp), color = CardWhite, shadowElevation = 1.dp, border = BorderStroke(1.dp, Border.copy(alpha = .45f)), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Enter your mobile number", style = MaterialTheme.typography.titleMedium, color = Ink)
+                    Text("Welcome", style = MaterialTheme.typography.titleMedium, color = Ink)
                     Spacer(Modifier.height(10.dp))
-                    PhoneInput(value = state.phone, onValueChange = onPhoneChange, onDone = { if (validPhone) onContinue() },
-                        error = state.phone.length == 10 && !validPhone, enabled = !state.busy, onFocusChange = { phoneFocused = it })
-                    if (state.phone.isNotEmpty() && !validPhone) {
-                        Spacer(Modifier.height(6.dp))
-                        val guidance = if (state.phone.length < 10) "Enter all 10 digits of your mobile number." else "Enter a valid Indian mobile number starting with 6–9."
-                        Text(guidance, color = DeepRed, style = MaterialTheme.typography.bodySmall)
-                    }
-                    state.error?.let {
+                    
+                    if (errorMessage != null) {
+                        Text(errorMessage, color = DeepRed, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = DeepRed, style = MaterialTheme.typography.bodySmall)
                     }
-                    state.notice?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(it, color = Muted, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    RushButton("Continue", onContinue, modifier = Modifier.bringIntoViewRequester(continueRequester), enabled = validPhone, loading = state.busy)
+                    
+                    RushButton("Continue with Google", onGoogleSignIn, enabled = !isBusy, loading = isBusy)
+                    
                     Spacer(Modifier.height(16.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         HorizontalDivider(Modifier.weight(1f), color = Border)
@@ -186,7 +149,7 @@ fun LoginScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 54.dp).clip(CircleShape).background(Peach.copy(alpha = .72f))
-                            .clickable(enabled = !state.busy, role = Role.Button, onClick = onBrowseSample).padding(horizontal = 16.dp, vertical = 10.dp),
+                            .clickable(enabled = !isBusy, role = Role.Button, onClick = onBrowseSample).padding(horizontal = 16.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RushIcon(R.drawable.ic_shopping_bag_01, null, Modifier.size(20.dp), Coral)
@@ -213,47 +176,13 @@ fun LoginScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
-    if (dialog != null) {
+    if (dialog != null || errorMessage != null) {
         AlertDialog(
-            onDismissRequest = { dialog = null },
+            onDismissRequest = { dialog = null; onClearError() },
             title = { Text(dialogTitle) },
-            text = { Text(dialog.orEmpty()) },
-            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Got it") } },
+            text = { Text(dialog ?: errorMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { dialog = null; onClearError() }) { Text("Got it") } },
             containerColor = CardWhite,
         )
-    }
-}
-
-@Composable
-private fun PhoneInput(value: String, onValueChange: (String) -> Unit, onDone: () -> Unit, error: Boolean, enabled: Boolean, onFocusChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 62.dp).clip(RoundedCornerShape(18.dp))
-            .border(1.5.dp, if (error) Coral else Border, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IndiaFlag()
-        Spacer(Modifier.width(9.dp))
-        Text("+91", style = MaterialTheme.typography.titleMedium, color = Ink)
-        Spacer(Modifier.width(12.dp))
-        Box(Modifier.width(1.dp).height(24.dp).background(Border))
-        Spacer(Modifier.width(12.dp))
-        BasicTextField(
-            value = value, onValueChange = onValueChange, singleLine = true, enabled = enabled,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink, fontWeight = FontWeight.SemiBold),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onDone() }), cursorBrush = SolidColor(Coral),
-            modifier = Modifier.weight(1f).onFocusChanged { onFocusChange(it.isFocused) }.semantics { contentDescription = "Mobile number" },
-            decorationBox = { inner -> Box { if (value.isEmpty()) Text("98765 43210", style = MaterialTheme.typography.bodyLarge, color = Muted.copy(alpha = .65f)); inner() } },
-        )
-    }
-}
-
-@Composable
-private fun IndiaFlag() {
-    Canvas(Modifier.size(width = 28.dp, height = 19.dp).clip(RoundedCornerShape(3.dp)).semantics { contentDescription = "India" }) {
-        drawRect(FlagSaffron, size = Size(size.width, size.height / 3))
-        drawRect(CardWhite, topLeft = Offset(0f, size.height / 3), size = Size(size.width, size.height / 3))
-        drawRect(FlagGreen, topLeft = Offset(0f, size.height * 2 / 3), size = Size(size.width, size.height / 3))
-        drawCircle(FlagBlue, radius = size.height / 10, center = Offset(size.width / 2, size.height / 2))
     }
 }

@@ -50,21 +50,26 @@ import com.rushit.app.ui.theme.Coral
 import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.theme.Ink
 import com.rushit.app.ui.theme.Peach
-import com.rushit.app.ui.viewmodel.AuthUiState
+import com.rushit.app.data.auth.AuthState
 
 @Composable
-fun SplashScreen(state: AuthUiState, onFinished: (Boolean) -> Unit) {
+fun SplashScreen(state: AuthState, onFinished: (String) -> Unit) {
     var entered by remember { mutableStateOf(false) }
     var routed by remember { mutableStateOf(false) }
-    val authenticated by rememberUpdatedState(state.authenticated)
     val finish by rememberUpdatedState(onFinished)
     LaunchedEffect(Unit) { entered = true }
-    LaunchedEffect(state.initializing) {
-        if (!state.initializing && !routed) {
+    LaunchedEffect(state) {
+        if (state !is AuthState.Loading && !routed) {
             // Let the first visible frame and NavHost attach without adding a startup timer.
             withFrameNanos { }
             routed = true
-            finish(authenticated)
+            finish(
+                when (state) {
+                    is AuthState.Authenticated -> "home"
+                    is AuthState.ProfileIncomplete -> "profile-setup"
+                    else -> "login"
+                }
+            )
         }
     }
     // A fast session check can finish before the animation starts: content must never start invisible.

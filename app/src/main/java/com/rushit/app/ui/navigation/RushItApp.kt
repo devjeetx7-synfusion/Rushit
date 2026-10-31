@@ -54,7 +54,7 @@ import com.rushit.app.ui.components.RushBottomBar
 import com.rushit.app.ui.components.mainDestinations
 import com.rushit.app.ui.screens.home.HomeScreen
 import com.rushit.app.ui.screens.login.LoginScreen
-import com.rushit.app.ui.screens.login.OtpScreen
+
 import com.rushit.app.ui.screens.splash.SplashScreen
 import com.rushit.app.ui.screens.store.HelpScreen
 import com.rushit.app.ui.screens.store.NotificationsScreen
@@ -84,7 +84,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) {
-    val authState by auth.state.collectAsState()
+    val authState by auth.authState.collectAsState(initial = AuthState.Loading)
+    val authError by auth.error.collectAsState()
     val shopState by shop.state.collectAsState()
     val orderState by orders.state.collectAsState()
     val nav = rememberNavController()
@@ -131,13 +132,15 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     LaunchedEffect(auth, nav) {
         auth.events.collect { event ->
             when (event) {
-                AuthEvent.OpenOtp -> nav.navigate("otp") { launchSingleTop = true }
                 AuthEvent.OpenHome -> nav.navigate("home") {
-                    popUpTo("login") { inclusive = true }
+                    popUpTo(nav.graph.id) { inclusive = true }
                     launchSingleTop = true
                 }
                 AuthEvent.OpenLogin -> nav.navigate("login") {
                     popUpTo(nav.graph.id) { inclusive = true }
+                    launchSingleTop = true
+                }
+                AuthEvent.OpenProfileSetup -> nav.navigate("profile-setup") {
                     launchSingleTop = true
                 }
             }
@@ -173,11 +176,21 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     // Keep a restored stack inert until a fresh process has checked its session.
                     composable("splash") { }
                     composable("login") {
-                        if (!needsStartupRoute) LoginScreen(authState, auth::updatePhone, onContinue = { auth.requestOtp() }, onBrowseSample = auth::browseSampleStore)
+                        if (!needsStartupRoute) LoginScreen(
+                            authState = authState,
+                            errorMessage = authError,
+                            onGoogleSignIn = { auth.initiateGoogleSignIn(context) },
+                            onBrowseSample = { /* TODO implement guest mode later */ nav.navigate("home") { popUpTo(nav.graph.id) { inclusive = true }; launchSingleTop = true } },
+                            onClearError = auth::clearError
+                        )
                     }
-                    composable("otp") {
-                        if (!needsStartupRoute) OtpScreen(authState, onBack = { auth.clearMessage(); nav.popBackStack() }, onOtpChange = auth::updateOtp,
-                            onVerify = auth::verifyOtp, onResend = { auth.requestOtp(resend = true) })
+                    composable("profile-setup") {
+                        if (!needsStartupRoute) com.rushit.app.ui.screens.login.ProfileSetupScreen(
+                            authState = authState,
+                            errorMessage = authError,
+                            onCompleteProfile = auth::completeProfile,
+                            onClearError = auth::clearError
+                        )
                     }
                     composable("home") {
                         if (!needsStartupRoute) HomeScreen(
@@ -225,8 +238,9 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         )
                     }
                     composable("account") {
-                        if (!needsStartupRoute) AccountScreen(authState, shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
-                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") }, onSignInOrOut = auth::signOutOrSignIn,
+                        if (!needsStartupRoute) AccountScreen(authState = authState, errorMessage = authError, shop = shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
+                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") },
+                            onSignInOrOut = { if (authState is AuthState.Authenticated) auth.signOut() else nav.navigate("login") { launchSingleTop = true } },
                             onHelp = { nav.navigate("help") { launchSingleTop = true } },
                             onNotifications = { nav.navigate("notifications") { launchSingleTop = true } })
                     }
@@ -396,9 +410,9 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     enter = EnterTransition.None,
                     exit = fadeOut(animationSpec = tween(220)),
                 ) {
-                    SplashScreen(authState) { authenticated ->
+                    SplashScreen(authState) { route ->
                         if (needsStartupRoute) {
-                            nav.navigate(if (authenticated) "home" else "login") {
+                            nav.navigate(route) {
                                 popUpTo(nav.graph.id) { inclusive = true }
                                 launchSingleTop = true
                             }
