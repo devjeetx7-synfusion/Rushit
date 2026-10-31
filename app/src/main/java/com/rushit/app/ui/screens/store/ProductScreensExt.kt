@@ -1,7 +1,7 @@
+package com.rushit.app.ui.screens.store
 import com.rushit.app.data.model.Review
 import com.rushit.app.data.model.Comment
 import com.rushit.app.data.model.Question
-package com.rushit.app.ui.screens.store
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
