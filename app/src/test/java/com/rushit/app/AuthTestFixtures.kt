@@ -203,6 +203,8 @@ fun buildIdToken(
     expiresAt: Long = 1_700_003_600L,
     nonce: String? = null,
     email: String? = "shopper@example.com",
+    name: String? = "Google Name",
+    picture: String? = "https://lh3.googleusercontent.com/a/photo",
 ): String {
     val claims = buildList {
         add("\"iss\":\"$issuer\"")
@@ -212,6 +214,8 @@ fun buildIdToken(
         add("\"exp\":$expiresAt")
         nonce?.let { add("\"nonce\":\"$it\"") }
         email?.let { add("\"email\":\"$it\"") }
+        name?.let { add("\"name\":\"$it\"") }
+        picture?.let { add("\"picture\":\"$it\"") }
     }.joinToString(",")
     val header = encodeSegment("""{"alg":"RS256","typ":"JWT"}""")
     val payload = encodeSegment("{$claims}")

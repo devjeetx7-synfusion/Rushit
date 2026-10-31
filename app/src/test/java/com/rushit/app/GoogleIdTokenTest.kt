@@ -66,6 +66,8 @@ class GoogleIdTokenTest {
         assertEquals("google-subject-1", claims.subject)
         assertEquals("hashed-nonce", claims.nonce)
         assertEquals("shopper@example.com", claims.email)
+        assertEquals("Google Name", claims.name)
+        assertEquals("https://lh3.googleusercontent.com/a/photo", claims.picture)
         assertEquals(1_700_003_600L, claims.expiresAtEpochSeconds)
     }
 

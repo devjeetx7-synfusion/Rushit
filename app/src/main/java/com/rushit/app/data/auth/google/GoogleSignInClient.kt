@@ -90,12 +90,15 @@ internal fun googleOutcomeFrom(
     if (idToken.isBlank()) {
         return GoogleSignInOutcome.Failed(GoogleSignInMessages.MISSING_TOKEN)
     }
+    // The name, email and photo are read from the token itself rather than from the credential's
+    // accessors: they are the same values Supabase will see, and they are only ever suggestions.
+    val claims = GoogleIdTokenClaims.parse(idToken)
     return GoogleSignInOutcome.Success(
         idToken = idToken,
         rawNonce = rawNonce,
-        displayName = googleCredential.displayName,
-        email = googleCredential.email,
-        photoUri = googleCredential.photoUri?.toString(),
+        displayName = googleCredential.displayName ?: claims?.name,
+        email = claims?.email,
+        photoUri = claims?.picture,
     )
 }
 

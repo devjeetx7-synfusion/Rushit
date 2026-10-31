@@ -43,7 +43,10 @@ class SupabaseAuthRepository(
         restore(announceLoading = true)
     }
 
-    override suspend fun retrySessionRestore() = restore(announceLoading = true)
+    override suspend fun retrySessionRestore() {
+        // The restore result is already published as state; a retry has nothing to return.
+        restore(announceLoading = true)
+    }
 
     override suspend fun signInWithGoogle(idToken: String, rawNonce: String?): AuthResult {
         if (!gateway.isConfigured) {

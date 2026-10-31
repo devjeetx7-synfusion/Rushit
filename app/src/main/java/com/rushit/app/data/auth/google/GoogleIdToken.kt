@@ -25,6 +25,9 @@ data class GoogleIdTokenClaims(
     val expiresAtEpochSeconds: Long?,
     val nonce: String?,
     val email: String?,
+    /** Display name and photo, used only as pre-filled suggestions during onboarding. */
+    val name: String? = null,
+    val picture: String? = null,
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
@@ -43,6 +46,8 @@ data class GoogleIdTokenClaims(
                 expiresAtEpochSeconds = body.number("exp"),
                 nonce = body.string("nonce"),
                 email = body.string("email"),
+                name = body.string("name"),
+                picture = body.string("picture"),
             )
         }
 

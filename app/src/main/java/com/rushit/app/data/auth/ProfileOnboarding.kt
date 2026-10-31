@@ -117,7 +117,7 @@ object FullNameRules {
     fun validate(normalized: String): String? = when {
         normalized.isEmpty() -> "Please enter your name so RushIt knows what to call you."
         normalized.length < MIN_LENGTH -> "Your name needs at least $MIN_LENGTH characters."
-        normalized.any { it.isIsoControl() } -> "Your name contains characters RushIt cannot save."
+        normalized.any { it.isISOControl() } -> "Your name contains characters RushIt cannot save."
         normalized.none { it.isLetterOrDigit() } -> "Please enter your name using letters or numbers."
         else -> null
     }
