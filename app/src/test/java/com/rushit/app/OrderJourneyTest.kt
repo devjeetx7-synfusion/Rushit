@@ -25,7 +25,7 @@ class OrderJourneyTest {
     private fun order(status: OrderStatus, celebratedAt: String? = null) = Order(
         id = "RI123456789",
         status = status,
-        items = listOf(OrderLine("tomato", "Tomato", "1 kg", 2, 3_200)),
+        items = listOf(OrderLine(productId = "tomato", name = "Tomato", unit = "1 kg", quantity = 2, unitPricePaise = 3_200)),
         subtotalPaise = 6_400,
         platformFeePaise = 500,
         totalPaise = 6_900,
@@ -118,9 +118,9 @@ class OrderJourneyTest {
     @Test fun `prices in the storyboard example add up`() {
         // Tomato ₹32 + Banana ₹28 + Milk ₹52 = ₹112, plus ₹5 platform fee, delivery FREE.
         val lines = listOf(
-            OrderLine("tomato", "Tomato", "1 kg", 1, 3_200),
-            OrderLine("banana", "Banana", "1 kg", 1, 2_800),
-            OrderLine("milk", "Fresh Milk", "1 L", 1, 5_200),
+            OrderLine(productId = "tomato", name = "Tomato", unit = "1 kg", quantity = 1, unitPricePaise = 3_200),
+            OrderLine(productId = "banana", name = "Banana", unit = "1 kg", quantity = 1, unitPricePaise = 2_800),
+            OrderLine(productId = "milk", name = "Fresh Milk", unit = "1 L", quantity = 1, unitPricePaise = 5_200),
         )
         assertEquals(11_200, orderSubtotal(lines))
         assertEquals(11_700, DeliveryPricing.total(orderSubtotal(lines)))

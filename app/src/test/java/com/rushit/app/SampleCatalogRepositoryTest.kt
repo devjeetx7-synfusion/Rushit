@@ -22,7 +22,17 @@ class SampleCatalogRepositoryTest {
         assertTrue(productsForMode(catalog.products, ShoppingMode.GROCERY).isNotEmpty())
         val examples = productsForMode(catalog.products, ShoppingMode.ECOMMERCE)
         assertTrue(examples.isNotEmpty())
-        assertTrue(examples.all { it.previewOnly && !it.isAvailable })
+        // The sample E-commerce mode mixes one fully detailed listing with preview-only listings.
+        // What must never happen is a preview listing that looks purchasable, so assert the
+        // invariant rather than one fixed shape of the sample data.
+        examples.forEach { product ->
+            if (product.previewOnly) {
+                assertFalse("a preview listing must not be available: ${product.id}", product.isAvailable)
+            } else {
+                assertTrue("a purchasable listing must be available: ${product.id}", product.isAvailable)
+            }
+        }
+        assertTrue("the sample store should still show a preview-only listing", examples.any { it.previewOnly })
         assertTrue(categoriesForMode(catalog.categories, ShoppingMode.GIFTS).isNotEmpty())
         assertFalse(productsForMode(catalog.products, ShoppingMode.GIFTS).isNotEmpty())
     }

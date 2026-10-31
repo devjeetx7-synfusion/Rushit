@@ -2,13 +2,19 @@ name: RushIt User Build
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
+  # Only so a failed build can leave its compiler output on the pull request. Actions logs and
+  # artifacts require signed-in web access to download, which makes a red run hard to diagnose.
+  pull-requests: write
 
 jobs:
   build-apk:
-    name: Build and verify signed debug APK
+    name: Test, build and verify the signed debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -29,7 +35,7 @@ jobs:
           cmdline-tools-version: '12266719'
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
-      - name: Build the signed debug APK
+      - name: Run unit tests and build the signed debug APK
         shell: bash
         env:
           # These optional values are bundled in the APK; never use privileged credentials.
@@ -37,7 +43,14 @@ jobs:
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
           RUSHIT_TERMS_URL: ${{ vars.RUSHIT_TERMS_URL }}
           RUSHIT_PRIVACY_URL: ${{ vars.RUSHIT_PRIVACY_URL }}
-        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -uo pipefail
+          # Google Sign-In is the only authentication method, so the auth unit tests must pass
+          # before an APK is produced. They run on the JVM: no emulator, no credentials, no network.
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain \
+            2>&1 | tee "$RUNNER_TEMP/build.log"
+          exit "${PIPESTATUS[0]}"
 
       - name: Verify APK identity and signature
         shell: bash
@@ -80,6 +93,52 @@ jobs:
           fi
           echo "Verified com.rushit.app test APK with versionCode $version_code."
           echo "Debug certificate SHA-256: ${certificate,,}"
+
+      - name: Report a failed build on the pull request
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          {
+            printf 'Build failed at %s.\n\n```\n' "$GITHUB_SHA"
+            LOG="$RUNNER_TEMP/build.log"
+            if [ -f "$LOG" ]; then
+              grep -E '^e: |^w: |error:|FAILURE:|What went wrong|Caused by:|Execution failed for task|> Task .*FAILED|tests? completed' "$LOG" | head -n 200
+              printf '\n'
+              tail -n 60 "$LOG"
+            else
+              printf 'No Gradle log was produced; the step failed before Gradle ran.\n'
+            fi
+            # An assertion failure only appears in the XML report, and assertTrue carries no
+            # message, so the stack trace is the only way to tell which line failed.
+            printf '\n'
+            python3 - <<'PYEOF'
+            import glob
+            import xml.etree.ElementTree as ET
+            for path in sorted(glob.glob('app/build/test-results/**/*.xml', recursive=True)):
+                for case in ET.parse(path).getroot().iter('testcase'):
+                    for failure in list(case.iter('failure')) + list(case.iter('error')):
+                        print()
+                        print('FAILED: %s > %s' % (case.get('classname'), case.get('name')))
+                        print((failure.text or failure.get('message') or '(no detail)')[:3000])
+            PYEOF
+            printf '```\n'
+          } > /tmp/comment.md
+          head -c 60000 /tmp/comment.md > /tmp/comment-trimmed.md
+          jq -Rs '{body: .}' < /tmp/comment-trimmed.md > /tmp/comment.json
+          gh api -X POST "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --input /tmp/comment.json
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rushit-user-unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
 
       - name: Upload RushIt User APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

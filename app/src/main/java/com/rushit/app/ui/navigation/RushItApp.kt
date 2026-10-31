@@ -74,6 +74,9 @@ import com.rushit.app.ui.theme.Cream
 import com.rushit.app.ui.sound.OrderSound
 import com.rushit.app.ui.theme.LocalReducedMotion
 import com.rushit.app.ui.theme.rememberReducedMotion
+import com.rushit.app.data.auth.AuthState
+import com.rushit.app.ui.screens.login.EditProfileScreen
+import com.rushit.app.ui.screens.login.ProfileSetupScreen
 import com.rushit.app.ui.viewmodel.AuthEvent
 import com.rushit.app.ui.viewmodel.AuthViewModel
 import com.rushit.app.ui.viewmodel.OrderViewModel
@@ -86,6 +89,9 @@ import kotlinx.coroutines.launch
 fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) {
     val authState by auth.authState.collectAsState(initial = AuthState.Loading)
     val authError by auth.error.collectAsState()
+    val authUi by auth.uiState.collectAsState()
+    val usernameAvailability by auth.usernameAvailability.collectAsState()
+    val recoveryAction = (authState as? AuthState.RecoverableError)?.action
     val shopState by shop.state.collectAsState()
     val orderState by orders.state.collectAsState()
     val nav = rememberNavController()
@@ -102,6 +108,18 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     val showSummary = shoppingRoute && shopState.totals.itemCount > 0 && !imeVisible
 
     LaunchedEffect(Unit) { orders.refreshOrders() }
+
+    // Re-read the account when the app returns to the foreground so a session that expired or was
+    // revoked elsewhere cannot leave protected screens reachable. A transient network failure is
+    // deliberately not allowed to clear an already signed-in state.
+    val appLifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(appLifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && auth.startupRouteHandled) auth.refreshAccount()
+        }
+        appLifecycle.addObserver(observer)
+        onDispose { appLifecycle.removeObserver(observer) }
+    }
 
     // A placed order is only announced after the repository stored it.
     val placedOrderId = orderState.order?.id?.takeIf { orderState.justPlaced }
@@ -131,18 +149,19 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
 
     LaunchedEffect(auth, nav) {
         auth.events.collect { event ->
-            when (event) {
-                AuthEvent.OpenHome -> nav.navigate("home") {
-                    popUpTo(nav.graph.id) { inclusive = true }
-                    launchSingleTop = true
-                }
-                AuthEvent.OpenLogin -> nav.navigate("login") {
-                    popUpTo(nav.graph.id) { inclusive = true }
-                    launchSingleTop = true
-                }
-                AuthEvent.OpenProfileSetup -> nav.navigate("profile-setup") {
-                    launchSingleTop = true
-                }
+            val target = when (event) {
+                AuthEvent.OpenHome -> "home"
+                AuthEvent.OpenLogin -> "login"
+                AuthEvent.OpenProfileSetup -> "profile-setup"
+            }
+            // Never re-navigate to the screen already in front of the user: that would wipe the
+            // shopping back stack every time the profile state was re-published.
+            if (nav.currentDestination?.route == target) return@collect
+            nav.navigate(target) {
+                // Clearing the whole graph is what stops the back button from returning to a
+                // protected screen after sign-out, and stops onboarding from being backed out of.
+                popUpTo(nav.graph.id) { inclusive = true }
+                launchSingleTop = true
             }
         }
     }
@@ -178,18 +197,37 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                     composable("login") {
                         if (!needsStartupRoute) LoginScreen(
                             authState = authState,
+                            uiState = authUi,
                             errorMessage = authError,
-                            onGoogleSignIn = { auth.initiateGoogleSignIn(context) },
-                            onBrowseSample = { /* TODO implement guest mode later */ nav.navigate("home") { popUpTo(nav.graph.id) { inclusive = true }; launchSingleTop = true } },
-                            onClearError = auth::clearError
+                            recoveryAction = recoveryAction,
+                            onGoogleSignIn = auth::initiateGoogleSignIn,
+                            onRetry = auth::retrySession,
+                            onClearError = auth::clearError,
                         )
                     }
+                    // Onboarding is the only entry on the back stack, so the system back button
+                    // leaves the app instead of skipping the required profile step.
                     composable("profile-setup") {
-                        if (!needsStartupRoute) com.rushit.app.ui.screens.login.ProfileSetupScreen(
+                        if (!needsStartupRoute) ProfileSetupScreen(
                             authState = authState,
+                            uiState = authUi,
                             errorMessage = authError,
-                            onCompleteProfile = auth::completeProfile,
-                            onClearError = auth::clearError
+                            usernameAvailability = usernameAvailability,
+                            onSave = auth::saveProfile,
+                            onCheckUsername = auth::checkUsername,
+                            onClearError = auth::clearError,
+                        )
+                    }
+                    composable("edit-profile") {
+                        if (!needsStartupRoute) EditProfileScreen(
+                            authState = authState,
+                            uiState = authUi,
+                            errorMessage = authError,
+                            usernameAvailability = usernameAvailability,
+                            onSave = auth::saveProfile,
+                            onCheckUsername = auth::checkUsername,
+                            onClearError = auth::clearError,
+                            onBack = { nav.popBackStack() },
                         )
                     }
                     composable("home") {
@@ -238,11 +276,27 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         )
                     }
                     composable("account") {
-                        if (!needsStartupRoute) AccountScreen(authState = authState, errorMessage = authError, shop = shopState, onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
-                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } }, onOrders = { orders.refreshOrders(); selectMain("orders") },
-                            onSignInOrOut = { if (authState is AuthState.Authenticated) auth.signOut() else nav.navigate("login") { launchSingleTop = true } },
+                        if (!needsStartupRoute) AccountScreen(
+                            authState = authState,
+                            uiState = authUi,
+                            errorMessage = authError,
+                            shop = shopState,
+                            onWishlist = { nav.navigate("wishlist") { launchSingleTop = true } },
+                            onAddresses = { nav.navigate("addresses") { launchSingleTop = true } },
+                            onOrders = { orders.refreshOrders(); selectMain("orders") },
+                            onEditProfile = { nav.navigate("edit-profile") { launchSingleTop = true } },
+                            onSignIn = {
+                                nav.navigate("login") {
+                                    popUpTo(nav.graph.id) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            },
+                            onSignOut = auth::signOut,
+                            onDeleteAccount = auth::deleteAccount,
+                            onClearError = auth::clearError,
                             onHelp = { nav.navigate("help") { launchSingleTop = true } },
-                            onNotifications = { nav.navigate("notifications") { launchSingleTop = true } })
+                            onNotifications = { nav.navigate("notifications") { launchSingleTop = true } },
+                        )
                     }
                     composable("help") { HelpScreen(onBack = { nav.popBackStack() }) }
                     composable("notifications") { NotificationsScreen(onBack = { nav.popBackStack() }) }

@@ -18,7 +18,25 @@ fun setting(name: String): String = providers.gradleProperty(name).orNull
 fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\")
     .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
 
+val supabaseUrl = setting("SUPABASE_URL").trim()
 val supabaseKey = setting("SUPABASE_ANON_KEY").trim()
+// The Web OAuth client ID is the ID-token audience. The Android OAuth client is matched by Google
+// from the package name plus the signing fingerprint, so it is never needed in this file.
+val googleWebClientId = setting("GOOGLE_WEB_CLIENT_ID").trim()
+// A client secret has no business being in an APK: Credential Manager only needs the public client ID.
+require(setting("GOOGLE_CLIENT_SECRET").isBlank()) {
+    "Never bundle a Google OAuth client secret in the app. Only GOOGLE_WEB_CLIENT_ID is required."
+}
+listOf(
+    "SUPABASE_URL" to supabaseUrl,
+    "SUPABASE_ANON_KEY" to supabaseKey,
+    "GOOGLE_WEB_CLIENT_ID" to googleWebClientId,
+).filter { it.second.isBlank() }.forEach { (name, _) ->
+    logger.warn(
+        "RushIt: $name is not set, so Google Sign-In will report itself as unconfigured at runtime. " +
+            "Set it in local.properties, a Gradle property, or the environment. See docs/AUTH_SETUP.md."
+    )
+}
 // A client app may only contain a publishable/anon key, never a privileged key.
 val jwtPayload = runCatching {
     String(Base64.getUrlDecoder().decode(supabaseKey.split('.')[1]), Charsets.UTF_8)
@@ -40,11 +58,11 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "SUPABASE_URL", quoted(setting("SUPABASE_URL").trim()))
+        buildConfigField("String", "SUPABASE_URL", quoted(supabaseUrl))
         buildConfigField("String", "SUPABASE_ANON_KEY", quoted(supabaseKey))
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(setting("GOOGLE_WEB_CLIENT_ID").trim()))
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(googleWebClientId))
     }
     buildTypes {
         release {
@@ -83,17 +101,24 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:2.5.0"))
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    // Used only for the account-deletion Edge Function; the service-role key stays server-side.
+    implementation("io.github.jan-tennert.supabase:functions-kt")
     implementation("io.ktor:ktor-client-android:2.3.11")
-    
+    // supabase-kt models session expiry with kotlinx.datetime.Instant; pinned to the version the
+    // 2.5.0 BOM was built against so the encrypted SessionManager and the SDK agree.
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
+
+    // Google Credential Manager sign-in. googleid supplies GetGoogleIdOption and the ID-token
+    // credential; credentials-play-services-auth bridges to Google Play services on older devices.
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
-    
-
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    // Lets the tests build real supabase-kt RestExceptions, whose message embeds request headers.
+    // That is what makes "no credential ever reaches a user-facing string" an asserted property.
+    testImplementation("io.ktor:ktor-client-mock:2.3.11")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

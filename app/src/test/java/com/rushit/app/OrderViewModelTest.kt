@@ -86,7 +86,7 @@ class OrderViewModelTest {
     }
 
     private fun draft() = OrderDraft(
-        items = listOf(OrderLine("tomato", "Tomato", "1 kg", 1, 3_200)),
+        items = listOf(OrderLine(productId = "tomato", name = "Tomato", unit = "1 kg", quantity = 1, unitPricePaise = 3_200)),
         mode = ShoppingMode.GROCERY,
         addressSummary = "12 Main Road, Patna, 800001",
         platformFeePaise = 500,

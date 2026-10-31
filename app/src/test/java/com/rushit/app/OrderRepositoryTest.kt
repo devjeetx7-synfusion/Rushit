@@ -24,7 +24,7 @@ class OrderRepositoryTest {
     }
 
     private fun draft(quantity: Int = 1) = OrderDraft(
-        items = listOf(OrderLine("tomato", "Tomato", "1 kg", quantity, 3_200)),
+        items = listOf(OrderLine(productId = "tomato", name = "Tomato", unit = "1 kg", quantity = quantity, unitPricePaise = 3_200)),
         mode = ShoppingMode.GROCERY,
         addressSummary = "12 Main Road, Patna, 800001",
         platformFeePaise = 500,
