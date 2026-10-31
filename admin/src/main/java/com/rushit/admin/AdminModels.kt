@@ -243,6 +243,8 @@ fun moreDestinations(): List<MoreDestination> = listOf(
     MoreDestination("roles", "Admin Roles", "Role-aware UI preview (local demo)", AdminIcons.Shield) { true },
     MoreDestination("activity_logs", "Activity Logs", "Local device history of admin actions", AdminIcons.Activity) { true },
     MoreDestination("profile", "Admin Profile", "Demo account, role & session", AdminIcons.Users) { true },
+    MoreDestination(AdminRoutes.PAYMENTS, "Payment & Refund History", "View customer payments and refunds", AdminIcons.Activity) { true },
+    MoreDestination(AdminRoutes.PAYOUTS, "Settlements & Payouts", "Seller settlements and payouts summary", AdminIcons.Layout) { true },
 )
 
 fun parseNotesMap(raw: String?): MutableMap<String, String> {

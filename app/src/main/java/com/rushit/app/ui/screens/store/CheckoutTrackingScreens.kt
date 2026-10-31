@@ -67,11 +67,21 @@ fun CheckoutScreen(
     orderState: OrderUiState,
     onBack: () -> Unit,
     onAddress: () -> Unit,
-    onChangeQuantity: (String, Int) -> Unit,
-    onPlaceOrder: () -> Unit,
+    onChangeQuantity: (String, String?, Int) -> Unit,
+    onPlaceOrder: (String) -> Unit,
 ) {
-    val products = remember(state.products, state.cart) { state.products.filter { (state.cart[it.id] ?: 0) > 0 } }
+    val cartItems = remember(state.products, state.cart) {
+        state.cart.mapNotNull { (key, quantity) ->
+            if (quantity <= 0) return@mapNotNull null
+            val (productId, variantId) = com.rushit.app.domain.parseCartKey(key)
+            val product = state.products.firstOrNull { it.id == productId } ?: return@mapNotNull null
+            Triple(product, variantId, quantity)
+        }
+    }
     val itemsPaise = state.totals.totalPaise
+    var selectedPaymentMethod by remember { androidx.compose.runtime.mutableStateOf("Cash on Delivery") }
+    val paymentMethods = listOf("Cash on Delivery", "UPI", "Credit Card", "Net Banking", "Wallet")
+    var showPaymentDemo by remember { androidx.compose.runtime.mutableStateOf(false) }
     val deliveryFee = DeliveryPricing.deliveryFee(itemsPaise)
     val platformFee = DeliveryPricing.platformFee()
     val payable = DeliveryPricing.total(itemsPaise)
@@ -105,16 +115,17 @@ fun CheckoutScreen(
             Spacer(Modifier.height(12.dp))
 
             // Items with quantity controls
-            if (products.isEmpty()) {
+            if (cartItems.isEmpty()) {
                 MessageCard("Your cart is empty", "Add items before checking out.", icon = R.drawable.ic_shopping_cart_01)
             } else {
                 Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("${products.size} ${if (products.size == 1) "item" else "items"}", style = MaterialTheme.typography.titleMedium, color = Ink)
-                        products.forEach { product ->
+                        Text("${cartItems.size} ${if (cartItems.size == 1) "item" else "items"}", style = MaterialTheme.typography.titleMedium, color = Ink)
+                        cartItems.forEach { (product, variantId, quantity) ->
                             CheckoutLine(
                                 product = product,
-                                quantity = state.cart[product.id] ?: 0,
+                                variantId = variantId,
+                                quantity = quantity,
                                 onChangeQuantity = onChangeQuantity,
                             )
                         }
@@ -144,6 +155,46 @@ fun CheckoutScreen(
             }
             Spacer(Modifier.height(12.dp))
 
+            Spacer(Modifier.height(12.dp))
+            
+            // Payment Method
+            Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Payment Method", style = MaterialTheme.typography.titleMedium, color = Ink)
+                    paymentMethods.forEach { method ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedPaymentMethod = method }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = (selectedPaymentMethod == method),
+                                onClick = { selectedPaymentMethod = method },
+                                colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = Coral)
+                            )
+                            Text(
+                                text = method,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Ink,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                    if (selectedPaymentMethod != "Cash on Delivery") {
+                        Surface(shape = RoundedCornerShape(8.dp), color = Peach, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Text(
+                                text = "Demo Mode: No real payment will be collected.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Coral,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Surface(shape = RoundedCornerShape(16.dp), color = SoftAmber, border = BorderStroke(1.dp, Amber.copy(alpha = 0.45f))) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     RushIcon(R.drawable.ic_help_circle, null, Modifier.size(20.dp), Amber)
@@ -165,11 +216,40 @@ fun CheckoutScreen(
         Surface(color = CardWhite, shadowElevation = 8.dp) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 RushButton(
-                    text = if (orderState.placing) "Placing demo order…" else "Place Order · ${formatPrice(payable)}",
-                    onClick = onPlaceOrder,
-                    enabled = products.isNotEmpty() && !state.address.isNullOrBlank() && !orderState.placing,
+                    text = if (orderState.placing) "Placing demo order…" else if (selectedPaymentMethod == "Cash on Delivery") "Place Order · ${formatPrice(payable)}" else "Proceed to Payment · ${formatPrice(payable)}",
+                    onClick = {
+                        if (selectedPaymentMethod == "Cash on Delivery") {
+                            onPlaceOrder(selectedPaymentMethod)
+                        } else {
+                            showPaymentDemo = true
+                        }
+                    },
+                    enabled = cartItems.isNotEmpty() && !state.address.isNullOrBlank() && !orderState.placing,
                     loading = orderState.placing,
                 )
+                if (showPaymentDemo) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showPaymentDemo = false },
+                        title = { Text("Simulate Payment") },
+                        text = { Text("Simulate a successful payment for ${formatPrice(payable)} via $selectedPaymentMethod?") },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showPaymentDemo = false
+                                onPlaceOrder(selectedPaymentMethod)
+                            }) {
+                                Text("Simulate Success", color = Coral)
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showPaymentDemo = false
+                                // Simulate failure doesn't place order
+                            }) {
+                                Text("Simulate Failure")
+                            }
+                        }
+                    )
+                }
                 Text(
                     if (state.address.isNullOrBlank()) "Add a delivery address to create a demo order." else "Creates a local demo order · no payment, no real delivery",
                     style = MaterialTheme.typography.bodySmall,
@@ -182,28 +262,32 @@ fun CheckoutScreen(
 }
 
 @Composable
-private fun CheckoutLine(product: Product, quantity: Int, onChangeQuantity: (String, Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(Peach.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-            CatalogImage(product.imageUrl, product.imageRes, product.name, Modifier.size(46.dp))
+private fun CheckoutLine(product: Product, variantId: String?, quantity: Int, onChangeQuantity: (String, String?, Int) -> Unit) {
+    val variant = product.variants.find { it.id == variantId }
+    val price = variant?.pricePaise ?: product.pricePaise
+    val stock = variant?.stockQuantity ?: product.stockQuantity
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Peach.copy(alpha = .5f)), contentAlignment = Alignment.Center) {
+            CatalogImage(product.imageUrl, product.imageRes, product.name, Modifier.size(48.dp))
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(product.name, style = MaterialTheme.typography.labelLarge, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(product.unit, style = MaterialTheme.typography.bodySmall, color = Muted)
-            Text(formatPrice(product.pricePaise * quantity), style = MaterialTheme.typography.labelMedium, color = Ink)
+            if (variant != null) {
+                Text(variant.attributes.entries.joinToString(", ") { "${it.key}: ${it.value}" }, style = MaterialTheme.typography.bodySmall, color = Muted)
+            } else {
+                Text(product.unit, style = MaterialTheme.typography.bodySmall, color = Muted)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(formatPrice(price), style = MaterialTheme.typography.labelLarge, color = Ink)
         }
-        Row(
-            Modifier.clip(CircleShape).background(SoftRed).padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            QuantityControl(R.drawable.ic_minus_sign, "Remove one ${product.name}") { onChangeQuantity(product.id, -1) }
-            Text("$quantity", style = MaterialTheme.typography.labelLarge, color = Ink, modifier = Modifier.padding(horizontal = 6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            QuantityControl(R.drawable.ic_minus_sign, "Remove one ${product.name}") { onChangeQuantity(product.id, variantId, -1) }
+            Text("$quantity", style = MaterialTheme.typography.labelMedium, color = Ink, modifier = Modifier.padding(horizontal = 8.dp))
             QuantityControl(
-                R.drawable.ic_add_01,
-                "Add one ${product.name}",
-                enabled = !product.previewOnly && product.isAvailable && quantity < (product.stockQuantity?.coerceAtMost(99) ?: 99),
-            ) { onChangeQuantity(product.id, 1) }
+                R.drawable.ic_add_01, "Add one ${product.name}",
+                enabled = !product.previewOnly && product.isAvailable && quantity < (stock?.coerceAtMost(99) ?: 99)
+            ) { onChangeQuantity(product.id, variantId, 1) }
         }
     }
 }

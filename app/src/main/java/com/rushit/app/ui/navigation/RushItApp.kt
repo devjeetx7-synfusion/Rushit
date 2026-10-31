@@ -285,7 +285,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             onBack = { nav.popBackStack() },
                             onAddress = { nav.navigate("addresses") { launchSingleTop = true } },
                             onChangeQuantity = shop::changeQuantity,
-                            onPlaceOrder = {
+                            onPlaceOrder = { paymentMethod ->
                                 val lines = orderLinesFor(shopState.cart, shopState.products)
                                 if (lines.isNotEmpty()) {
                                     val subtotal = lines.sumOf { it.lineTotalPaise }
@@ -296,6 +296,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                                             addressSummary = shopState.address,
                                             platformFeePaise = DeliveryPricing.platformFee(),
                                             deliveryFeePaise = DeliveryPricing.deliveryFee(subtotal),
+                                            paymentMethod = paymentMethod
                                         ),
                                     )
                                 }

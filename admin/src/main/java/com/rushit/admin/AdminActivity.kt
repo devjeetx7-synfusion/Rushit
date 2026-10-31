@@ -691,24 +691,11 @@ private fun AdminRoot() {
                             snackbar = "Local activity log reset to sample events"
                         })
                     }
-                }
-                pendingDesignerDestination?.let { destination ->
-                    AdminDialog(
-                        title = "Discard Home draft changes?",
-                        message = "Your unsaved changes to sections will be discarded before leaving Home Designer.",
-                        confirmLabel = "Discard and leave",
-                        isDestructive = true,
-                        onConfirm = {
-                            val savedSections = preferences.getString("sections", null)?.split("##")?.filter { it.isNotBlank() } ?: defaultHomeSections
-                            sections.clear(); sections.addAll(savedSections)
-                            homeDraftDirty = false
-                            pendingDesignerDestination = null
-                            if (destination in AdminRoutes.rootTabs) navigateToRootTab(destination)
-                            else nav.navigate(destination) { launchSingleTop = true }
-                        },
-                        onDismiss = { pendingDesignerDestination = null },
-                    )
-                }
+                    composable(AdminRoutes.PAYMENTS) {
+                        AdminPaymentsScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable(AdminRoutes.PAYOUTS) {
+                        AdminPayoutsScreen(onBack = { nav.popBackStack() })
                     }
                     }
                     }

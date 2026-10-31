@@ -1,0 +1,83 @@
+--- app/src/main/java/com/rushit/app/data/model/Models.kt
++++ app/src/main/java/com/rushit/app/data/model/Models.kt
+@@ -19,20 +19,43 @@
+     val originalPricePaise: Long? = null,
+     val unit: String,
+     val isAvailable: Boolean = true,
+     val stockQuantity: Int? = null,
+     val isBestseller: Boolean = false,
+     val mode: ShoppingMode = ShoppingMode.GROCERY,
+-    // Preview listings are never purchasable, even if another flag is misconfigured.
+     val previewOnly: Boolean = false,
++    val media: List<ProductMedia> = emptyList(),
++    val options: List<ProductOption> = emptyList(),
++    val variants: List<ProductVariant> = emptyList(),
++    val rating: Double? = null,
++    val reviewCount: Int = 0,
++    val specifications: Map<String, String> = emptyMap(),
+ )
++
++enum class MediaType { IMAGE, VIDEO }
++
++data class ProductMedia(
++    val id: String,
++    val url: String? = null,
++    @DrawableRes val resId: Int? = null,
++    val type: MediaType = MediaType.IMAGE,
++    val variantId: String? = null
++)
++
++data class ProductOption(val name: String, val values: List<String>)
++
++data class ProductVariant(
++    val id: String,
++    val attributes: Map<String, String>, // e.g. "Color" -> "Red", "Size" -> "M"
++    val pricePaise: Long? = null, // overrides base price if set
++    val stockQuantity: Int? = null,
++    val sku: String? = null
++)
+ 
+ data class Category(
+@@ -40,11 +63,22 @@
+-data class CartItem(val productId: String, val quantity: Int, val unitPricePaise: Long)
++data class CartItem(
++    val productId: String,
++    val variantId: String? = null,
++    val quantity: Int,
++    val unitPricePaise: Long
++)
+ 
+@@ -58,11 +92,14 @@
+ data class OrderLine(
+     val productId: String,
++    val variantId: String? = null,
++    val variantName: String? = null,
+     val name: String,
+@@ -74,21 +111,28 @@
+ data class Order(
+     val id: String,
+     val userId: String = "local",
+     val status: OrderStatus = OrderStatus.CONFIRMED,
+     val items: List<OrderLine> = emptyList(),
+     val subtotalPaise: Long,
+     val deliveryFeePaise: Long = 0,
+     val platformFeePaise: Long = 0,
+     val discountPaise: Long = 0,
+     val totalPaise: Long,
+     val createdAt: String,
+     val updatedAt: String = createdAt,
+     val mode: ShoppingMode = ShoppingMode.GROCERY,
+     val addressSummary: String? = null,
++    val paymentMethod: String = "COD",
++    val paymentStatus: String = "Pending",
+     val isDemo: Boolean = true,
+     val celebratedAt: String? = null,
+ ) {
+     val itemCount: Int get() = items.sumOf { it.quantity }
+ }
++
++data class Payment(val id: String, val orderId: String, val amountPaise: Long, val method: String, val status: String, val date: String)
++data class Refund(val id: String, val orderId: String, val amountPaise: Long, val status: String, val date: String)
++data class SellerSettlement(val sellerId: String, val period: String, val grossSalesPaise: Long, val platformCommissionPaise: Long, val payoutPaise: Long, val status: String)
+ 
+ data class Catalog(val categories: List<Category>, val products: List<Product>, val isSample: Boolean)

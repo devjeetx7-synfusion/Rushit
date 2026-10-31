@@ -107,6 +107,9 @@ fun OrderDetailsScreen(
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(line.name, style = MaterialTheme.typography.labelMedium, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (line.variantName != null) {
+                                    Text(line.variantName, style = MaterialTheme.typography.bodySmall, color = Muted)
+                                }
                                 Text("${line.unit} · ${formatPrice(line.unitPricePaise)}", style = MaterialTheme.typography.bodySmall, color = Muted)
                             }
                             Text("×${line.quantity}", style = MaterialTheme.typography.labelMedium, color = Muted)
@@ -128,6 +131,10 @@ fun OrderDetailsScreen(
                         Text("To pay", style = MaterialTheme.typography.titleMedium, color = Ink)
                         Text(formatPrice(order.totalPaise), style = MaterialTheme.typography.titleMedium, color = Ink)
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Payment Information", style = MaterialTheme.typography.titleSmall, color = Ink)
+                    BillRow("Method", order.paymentMethod)
+                    BillRow("Status", order.paymentStatus)
                     Text(
                         if (order.isDemo) "Demo order · illustrative prices, no payment was taken."
                         else "Payment status is provided by the order source.",

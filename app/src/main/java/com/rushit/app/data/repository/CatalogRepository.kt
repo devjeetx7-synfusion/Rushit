@@ -41,7 +41,25 @@ class SampleCatalogRepository : CatalogRepository {
                 Product("water", "Sparkling Water", "A sample listing of sparkling water.", "drinks", imageRes = R.drawable.category_drinks, pricePaise = 3_000, unit = "500 ml"),
                 Product("wash", "Hand Wash", "A sample listing of hand wash.", "care", imageRes = R.drawable.category_care, pricePaise = 9_500, unit = "200 ml"),
                 Product("cleaner", "Surface Cleaner", "A sample listing of surface cleaner.", "household", imageRes = R.drawable.category_household, pricePaise = 11_500, unit = "500 ml"),
-                Product("demo_headphones", "Wireless Headphones", "An illustrative electronics listing, shown for preview only.", "e_electronics", imageRes = R.drawable.ecommerce_headphones, pricePaise = 129_900, unit = "1 pair", isAvailable = false, mode = ShoppingMode.ECOMMERCE, previewOnly = true),
+                Product("demo_headphones", "Wireless Headphones", "High quality noise-cancelling wireless headphones.", "e_electronics", imageRes = R.drawable.ecommerce_headphones, pricePaise = 129_900, unit = "1 pair", isAvailable = true, mode = ShoppingMode.ECOMMERCE, previewOnly = false, 
+                    media = listOf(
+                        com.rushit.app.data.model.ProductMedia("m1", resId = R.drawable.ecommerce_headphones),
+                        com.rushit.app.data.model.ProductMedia("m2", resId = R.drawable.ic_launcher), // dummy
+                        com.rushit.app.data.model.ProductMedia("m3", type = com.rushit.app.data.model.MediaType.VIDEO)
+                    ),
+                    options = listOf(
+                        com.rushit.app.data.model.ProductOption("Color", listOf("Black", "White")),
+                        com.rushit.app.data.model.ProductOption("Size", listOf("Standard", "Large"))
+                    ),
+                    variants = listOf(
+                        com.rushit.app.data.model.ProductVariant("v1", mapOf("Color" to "Black", "Size" to "Standard"), stockQuantity = 10),
+                        com.rushit.app.data.model.ProductVariant("v2", mapOf("Color" to "Black", "Size" to "Large"), stockQuantity = 0),
+                        com.rushit.app.data.model.ProductVariant("v3", mapOf("Color" to "White", "Size" to "Standard"), stockQuantity = 5, pricePaise = 139_900)
+                    ),
+                    rating = 4.5,
+                    reviewCount = 128,
+                    specifications = mapOf("Battery Life" to "30 hours", "Bluetooth" to "5.2", "Weight" to "250g")
+                ),
                 Product("demo_lamp", "Table Lamp", "An illustrative home and living listing, shown for preview only.", "e_home", imageRes = R.drawable.ecommerce_lamp, pricePaise = 89_900, unit = "1 piece", isAvailable = false, mode = ShoppingMode.ECOMMERCE, previewOnly = true),
             ),
         )

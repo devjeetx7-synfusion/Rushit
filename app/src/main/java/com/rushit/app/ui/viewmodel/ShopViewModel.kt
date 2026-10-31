@@ -54,7 +54,7 @@ data class ShopUiState(
     val totals: CartTotals get() = cartTotals(cart, products)
     val selectedAddress: SavedAddress? get() = addresses.firstOrNull { it.id == selectedAddressId }
     val address: String? get() = selectedAddress?.summary
-    fun quantityFor(product: Product): Int = carts[product.mode]?.get(product.id) ?: 0
+    fun quantityFor(product: Product, variantId: String? = null): Int = carts[product.mode]?.get(com.rushit.app.domain.cartKey(product.id, variantId)) ?: 0
 
     /** Categories of the active mode; the single source for the home rail and listing screens. */
     fun categoriesInMode(): List<Category> = categories.filter { it.mode == selectedMode }.sortedBy { it.sortOrder }
@@ -157,9 +157,9 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
         _state.update { it.copy(carts = it.carts - mode) }
     }
 
-    fun changeQuantity(productId: String, delta: Int) {
+    fun changeQuantity(productId: String, variantId: String? = null, delta: Int) {
         val product = _state.value.products.firstOrNull { it.id == productId } ?: return
-        _state.update { it.copy(carts = updateModeCart(it.carts, product, delta)) }
+        _state.update { it.copy(carts = updateModeCart(it.carts, product, variantId, delta)) }
     }
 
     fun toggleWishlist(productId: String) {
