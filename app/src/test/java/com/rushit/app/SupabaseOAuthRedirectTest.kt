@@ -27,7 +27,7 @@ class SupabaseOAuthRedirectTest {
 
     @Test
     fun `unrelated links are ignored`() {
-        for (uri in listOf(null, "", "not a uri", "https://example.com", "rushit://auth/other?code=$code", "rushit://other/callback?code=$code")) {
+        for (uri in listOf(null, "", "not a uri", "https://example.com", "rushit://other/callback?code=$code")) {
             assertEquals(SupabaseOAuthRedirect.Result.Ignored, SupabaseOAuthRedirect.parse(uri))
         }
     }
@@ -35,6 +35,7 @@ class SupabaseOAuthRedirectTest {
     @Test
     fun `host path case credentials port fragments and malformed URLs are rejected`() {
         for (uri in listOf(
+            "rushit://auth/other?code=$code",
             "rushit://AUTH/callback?code=$code",
             "rushit://auth/callback/extra?code=$code",
             "rushit://attacker@auth/callback?code=$code",
