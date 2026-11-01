@@ -69,11 +69,11 @@ import com.rushit.app.ui.viewmodel.AuthUiState
 import java.net.URI
 
 /**
- * RushIt's only sign-in screen.
+ * RushIt's sign-in screen.
  *
- * Google is the single authentication method in this release, so there is no guest or sample-store
- * shortcut: every shopping screen sits behind a real Supabase account. The screen keeps the RushIt
- * wordmark, the delivery rider, the cream and coral palette and the policy links.
+ * Two Firebase Authentication methods are offered — Google and a phone one-time code — so there is no
+ * guest or sample-store shortcut: every shopping screen sits behind a real account. The screen keeps
+ * the RushIt wordmark, the delivery rider, the cream and coral palette and the policy links.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -83,6 +83,7 @@ fun LoginScreen(
     errorMessage: String?,
     recoveryAction: RecoveryAction?,
     onGoogleSignIn: () -> Unit,
+    onPhoneSignIn: () -> Unit,
     onRetry: () -> Unit,
     onClearError: () -> Unit,
 ) {
@@ -214,14 +215,15 @@ fun LoginScreen(
                         Text("Welcome", style = MaterialTheme.typography.titleMedium, color = Ink)
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Sign in with Google to create your RushIt account or pick up where you left off.",
+                            "Continue with Google or a phone number to create your RushIt account " +
+                                "or pick up where you left off.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Muted,
                         )
                         Spacer(Modifier.height(18.dp))
 
                         if (errorMessage != null) {
-                            ErrorBanner(errorMessage, onClearError)
+                            AuthErrorBanner(errorMessage, onClearError)
                             Spacer(Modifier.height(14.dp))
                         }
 
@@ -230,6 +232,8 @@ fun LoginScreen(
                             enabled = !isBusy,
                             loading = uiState.signingIn,
                         )
+                        Spacer(Modifier.height(10.dp))
+                        PhoneSignInButton(onClick = onPhoneSignIn, enabled = !isBusy)
 
                         if (recoveryAction == RecoveryAction.RETRY_SESSION) {
                             Spacer(Modifier.height(10.dp))
@@ -311,9 +315,47 @@ fun LoginScreen(
     }
 }
 
+/**
+ * Secondary sign-in entry point.
+ *
+ * Deliberately quieter than the Google button: Google stays the primary action, and a phone sign-in
+ * is one tap away without competing with it.
+ */
+@Composable
+private fun PhoneSignInButton(onClick: () -> Unit, enabled: Boolean = true) {
+    val active = enabled
+    Surface(
+        onClick = onClick,
+        enabled = active,
+        shape = CircleShape,
+        color = Cream,
+        contentColor = DeepRed,
+        border = BorderStroke(1.dp, if (active) Coral.copy(alpha = .55f) else Border.copy(alpha = .5f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .alpha(if (active) 1f else .62f),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                "Continue with phone number",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = DeepRed,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
 /** Inline, dismissible error. Announced politely so screen readers pick it up without stealing focus. */
 @Composable
-private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
+internal fun AuthErrorBanner(message: String, onDismiss: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SoftRed,

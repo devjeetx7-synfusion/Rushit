@@ -54,6 +54,7 @@ import com.rushit.app.ui.components.RushBottomBar
 import com.rushit.app.ui.components.mainDestinations
 import com.rushit.app.ui.screens.home.HomeScreen
 import com.rushit.app.ui.screens.login.LoginScreen
+import com.rushit.app.ui.screens.login.PhoneLoginScreen
 
 import com.rushit.app.ui.screens.splash.SplashScreen
 import com.rushit.app.ui.screens.store.HelpScreen
@@ -90,6 +91,7 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
     val authState by auth.authState.collectAsState(initial = AuthState.Loading)
     val authError by auth.error.collectAsState()
     val authUi by auth.uiState.collectAsState()
+    val phoneUi by auth.phoneState.collectAsState()
     val usernameAvailability by auth.usernameAvailability.collectAsState()
     val recoveryAction = (authState as? AuthState.RecoverableError)?.action
     val shopState by shop.state.collectAsState()
@@ -201,7 +203,24 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             errorMessage = authError,
                             recoveryAction = recoveryAction,
                             onGoogleSignIn = auth::initiateGoogleSignIn,
+                            onPhoneSignIn = {
+                                nav.navigate("phone-login") { launchSingleTop = true }
+                            },
                             onRetry = auth::retrySession,
+                            onClearError = auth::clearError,
+                        )
+                    }
+                    // Phone OTP sign-in. Reached only from the login screen, and always leaves a
+                    // working back path so a person can switch to Google without signing in.
+                    composable("phone-login") {
+                        if (!needsStartupRoute) PhoneLoginScreen(
+                            uiState = phoneUi,
+                            errorMessage = authError,
+                            onSendCode = auth::startPhoneVerification,
+                            onResendCode = auth::resendPhoneCode,
+                            onVerifyCode = auth::submitPhoneCode,
+                            onChangeNumber = auth::changePhoneNumber,
+                            onBack = { nav.popBackStack() },
                             onClearError = auth::clearError,
                         )
                     }

@@ -30,8 +30,8 @@ class ProfileOnboardingTest {
 
     @Test
     fun `saved values always win over provider suggestions`() {
-        val session = googleSession(
-            userId = TestConfig.USER_A,
+        val session = googleIdentity(
+            uid = TestConfig.USER_A,
             fullName = "Google Name",
             username = "google.handle",
             avatarUrl = "https://lh3.googleusercontent.com/a/photo",
@@ -54,7 +54,7 @@ class ProfileOnboardingTest {
 
     @Test
     fun `provider suggestions fill the form when nothing was saved yet`() {
-        val session = googleSession(userId = TestConfig.USER_A)
+        val session = googleIdentity(uid = TestConfig.USER_A)
 
         val draft = ProfileOnboarding.draftFor(session, null)
 
@@ -68,7 +68,7 @@ class ProfileOnboardingTest {
     @Test
     fun `partially saved profiles keep the saved part and suggest the rest`() {
         val draft = ProfileOnboarding.draftFor(
-            googleSession(userId = TestConfig.USER_A),
+            googleIdentity(uid = TestConfig.USER_A),
             Profile(id = TestConfig.USER_A, fullName = "  ", username = null, avatarUrl = null),
         )
 
@@ -79,9 +79,9 @@ class ProfileOnboardingTest {
 
     @Test
     fun `new profile values carry provider hints but never complete onboarding`() {
-        val values = ProfileOnboarding.newProfileValues(googleSession(userId = TestConfig.USER_A))
+        val values = ProfileOnboarding.newProfileValues(googleIdentity(uid = TestConfig.USER_A))
 
-        assertEquals(TestConfig.USER_A, values.userId)
+        assertEquals(TestConfig.USER_A, values.firebaseUid)
         assertEquals("Google Name", values.fullName)
         assertEquals("https://lh3.googleusercontent.com/a/photo", values.avatarUrl)
     }

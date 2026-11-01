@@ -201,6 +201,47 @@ jobs:
           fi
           echo "Persistent test keystore validated in RUNNER_TEMP; signing credentials are not logged."
 
+      - name: Provide Firebase configuration when available
+        shell: bash
+        env:
+          # google-services.json is not a secret (project id, api key and client ids are public), but
+          # it is project-specific, so it is supplied here instead of being committed. Either a
+          # repository variable or a secret works; the secret wins because it reliably carries
+          # multi-line values.
+          GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_JSON_VAR: ${{ vars.GOOGLE_SERVICES_JSON }}
+        run: |
+          set -euo pipefail
+          set +x
+          google_services_json="${GOOGLE_SERVICES_JSON_SECRET:-${GOOGLE_SERVICES_JSON_VAR:-}}"
+          if [[ -z "$google_services_json" ]]; then
+            # The build applies the google-services plugin only when this file exists, so a build
+            # without it is still valid: Firebase Authentication reports "not configured" in the app
+            # instead of crashing, and every unit test still runs.
+            echo "::warning::No GOOGLE_SERVICES_JSON variable or secret is set. Building without Firebase: Google and phone sign-in will report that this build is not configured."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$google_services_json" > app/google-services.json
+          if ! python3 - <<'PY'
+          import json
+          import sys
+          try:
+              with open('app/google-services.json', encoding='utf-8') as handle:
+                  config = json.load(handle)
+          except (OSError, ValueError):
+              sys.exit(1)
+          # Only assert the shape needed by the Gradle plugin; never print the file.
+          project = config.get('project_info', {}).get('project_id', '')
+          sys.exit(0 if project else 1)
+          PY
+          then
+            echo "::error::The supplied google-services.json is not valid (no project_info.project_id)."
+            rm -f app/google-services.json
+            exit 1
+          fi
+          echo "google-services.json written from the configured CI variable or secret."
+
       - name: Run unit tests and build the signed debug APK
         shell: bash
         env:
@@ -216,8 +257,9 @@ jobs:
         run: |
           set -uo pipefail
           set +x
-          # Google Sign-In is the only authentication method, so the auth unit tests must pass
-          # before an APK is produced. They run on the JVM: no emulator, no signing keys, no network.
+          # Google Sign-In and Firebase phone OTP are the only authentication methods, so the auth unit
+          # tests must pass before an APK is produced. They run on the JVM: no emulator, no signing
+          # keys, no network, and no real SMS (Firebase test phone numbers are used manually).
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain \
             2>&1 | tee "$RUNNER_TEMP/build.log"
           result="${PIPESTATUS[0]}"
@@ -299,12 +341,15 @@ jobs:
             exit 1
           fi
 
-          # Verify the browser callback is actually packaged, not just present in source.
+          # The old flow opened a Custom Tab and came back through rushit://auth/callback. That deep
+          # link must stay gone: its presence would mean a browser sign-in path was reintroduced.
           manifest_xml="$("$aapt" dump xmltree "$APK_PATH" AndroidManifest.xml)"
-          if ! printf '%s\n' "$manifest_xml" | grep -q 'android:scheme.*"rushit"' ||
-             ! printf '%s\n' "$manifest_xml" | grep -q 'android:host.*"auth"' ||
-             ! printf '%s\n' "$manifest_xml" | grep -q 'android:path.*"/callback"'; then
-            echo "::error::The APK is missing the exact rushit://auth/callback intent filter."
+          if printf '%s\n' "$manifest_xml" | grep -q 'android:scheme.*"rushit"'; then
+            echo "::error::The APK still declares the retired rushit:// authentication deep link."
+            exit 1
+          fi
+          if printf '%s\n' "$manifest_xml" | grep -qi 'android:host.*"auth"'; then
+            echo "::error::The APK still declares an authentication host in its manifest."
             exit 1
           fi
           if ! python3 - "$APK_PATH" <<'PY'
@@ -312,15 +357,37 @@ jobs:
           with zipfile.ZipFile(sys.argv[1]) as apk:
               dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
           required = [
+              # Google sign-in path: Credential Manager, never the deprecated GoogleSignIn client.
               b'Landroidx/credentials/CredentialManager;',
               b'Lcom/google/android/libraries/identity/googleid/GetGoogleIdOption;',
               b'Lcom/rushit/app/data/auth/google/GoogleSignInCoordinator;',
-              b'Lcom/rushit/app/data/auth/google/SupabaseOAuthRedirect;',
+              # Firebase Authentication is the identity provider for both Google and phone sign-in.
+              b'Lcom/google/firebase/auth/FirebaseAuth;',
+              b'Lcom/rushit/app/data/auth/firebase/FirebaseAuthGateway;',
+              b'Lcom/rushit/app/data/auth/FirebaseAuthRepository;',
+              # The Supabase client is still shipped: it owns the database, not the identity.
+              b'Lio/github/jan/supabase/SupabaseClient;',
           ]
           sys.exit(0 if all(marker in dex for marker in required) else 1)
           PY
           then
-            echo "::error::The APK is missing Credential Manager or RushIt's verified OAuth fallback classes."
+            echo "::error::The APK is missing Credential Manager, Firebase Authentication or Supabase data classes."
+            exit 1
+          fi
+          if ! python3 - "$APK_PATH" <<'PY'
+          import re, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
+          # Classes from the retired browser flow. Any of these means an old auth path came back.
+          forbidden = [
+              b'Lcom/rushit/app/data/auth/google/SupabaseOAuthRedirect;',
+              b'Lcom/rushit/app/data/auth/google/SupabaseBrowserSignIn;',
+              b'Landroidx/browser/customtabs/CustomTabsIntent;',
+          ]
+          sys.exit(0 if not any(marker in dex for marker in forbidden) else 1)
+          PY
+          then
+            echo "::error::The APK still packages the retired Supabase browser OAuth classes."
             exit 1
           fi
 
@@ -337,7 +404,7 @@ jobs:
             exit 1
           fi
           echo "Verified com.rushit.app test APK with versionCode $version_code and configured Google Web Client ID."
-          echo "::notice::APK verified: com.rushit.app, versionCode $version_code; Google Web Client ID, Credential Manager, Supabase OAuth fallback and rushit://auth/callback are packaged; signature valid."
+          echo "::notice::APK verified: com.rushit.app, versionCode $version_code; Google Web Client ID, Credential Manager, Firebase Authentication packaged; browser OAuth and rushit://auth/callback absent; signature valid."
           printf '%s\n' "$verification" | grep -E '^(Verifies|Verified using v[1234] scheme)'
           echo "Signing certificate SHA-1: ${sha1,,}"
           echo "Signing certificate SHA-256: ${sha256,,}"

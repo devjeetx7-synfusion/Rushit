@@ -3,20 +3,21 @@ package com.rushit.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.rushit.app.BuildConfig
 import com.rushit.app.data.auth.AuthFailureKind
 import com.rushit.app.data.auth.AuthRepository
 import com.rushit.app.data.auth.AuthResult
 import com.rushit.app.data.auth.AuthState
+import com.rushit.app.data.auth.PhoneVerificationOutcome
 import com.rushit.app.data.auth.RecoveryAction
 import com.rushit.app.data.auth.UsernameAvailability
-import com.rushit.app.data.auth.google.GoogleIdTokenValidator
 import com.rushit.app.data.auth.google.GoogleSignInClient
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
-import com.rushit.app.data.auth.google.IdTokenCheck
-import com.rushit.app.data.auth.google.SupabaseOAuthRedirect
+import com.rushit.app.data.auth.phone.CountryCode
+import com.rushit.app.data.auth.phone.PhoneNumbers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,17 +50,34 @@ data class AuthUiState(
     val busy: Boolean get() = signingIn || savingProfile || signingOut || deletingAccount
 }
 
+/**
+ * State of the phone sign-in screen.
+ *
+ * The Firebase verification id and resend token deliberately never appear here: they live in the
+ * repository, so nothing in the UI layer can leak them into a log, a saved-state bundle or a
+ * crash report.
+ */
+data class PhoneLoginUiState(
+    val requesting: Boolean = false,
+    val verifying: Boolean = false,
+    val codeSent: Boolean = false,
+    val resendSecondsRemaining: Int = 0,
+) {
+    val busy: Boolean get() = requesting || verifying
+}
+
 class AuthViewModel(
     private val repository: AuthRepository,
     private val googleSignIn: GoogleSignInClient,
-    private val webClientId: String = BuildConfig.GOOGLE_WEB_CLIENT_ID,
-    private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
 ) : ViewModel() {
 
     val authState: StateFlow<AuthState> = repository.authState
 
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
+
+    private val _phoneState = MutableStateFlow(PhoneLoginUiState())
+    val phoneState: StateFlow<PhoneLoginUiState> = _phoneState.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
@@ -76,6 +94,8 @@ class AuthViewModel(
     /** The last route published, so a repeated identical state cannot re-navigate. */
     private var lastRouted: AuthEvent? = null
 
+    private var resendJob: Job? = null
+
     init {
         // Collect before initializing so no state emitted during restoration is missed.
         viewModelScope.launch { repository.authState.collect { publish(it) } }
@@ -91,89 +111,140 @@ class AuthViewModel(
         lastRouted = routeFor(repository.authState.value)
     }
 
-    /** Launch the two-stage flow. The flag is set synchronously, before a second tap can queue. */
+    /** Launch the Google account picker. The flag is set synchronously, before a second tap queues. */
     fun initiateGoogleSignIn() {
         if (_uiState.value.signingIn) return
         _uiState.update { it.copy(signingIn = true) }
         _error.value = null
         viewModelScope.launch {
             try {
-                handleGoogleOutcome(googleSignIn.requestGoogleIdToken())
+                when (val outcome = googleSignIn.requestGoogleIdToken()) {
+                    // Dismissing the account picker is a decision, not a failure.
+                    GoogleSignInOutcome.Cancelled -> Unit
+                    GoogleSignInOutcome.Unconfigured -> _error.value = GoogleSignInMessages.UNCONFIGURED
+                    GoogleSignInOutcome.NoCredentialAvailable -> _error.value = GoogleSignInMessages.NO_GOOGLE_ACCOUNT
+                    GoogleSignInOutcome.Unsupported -> _error.value = GoogleSignInMessages.PLAY_SERVICES
+                    is GoogleSignInOutcome.Failed -> _error.value = outcome.message
+                    is GoogleSignInOutcome.Success ->
+                        when (val result = repository.signInWithGoogle(outcome.idToken)) {
+                            AuthResult.Success -> Unit
+                            is AuthResult.Failure -> _error.value = result.message
+                        }
+                }
             } finally {
                 _uiState.update { it.copy(signingIn = false) }
             }
         }
     }
 
-    /**
-     * Consume only RushIt's exact OAuth callback. The application-scoped client also deduplicates
-     * the code, so recreating an Activity with the same Intent cannot exchange it twice.
-     */
-    fun handleAuthRedirect(uri: String?) {
-        if (SupabaseOAuthRedirect.parse(uri) == SupabaseOAuthRedirect.Result.Ignored) return
-        if (_uiState.value.signingIn) return
-        _uiState.update { it.copy(signingIn = true) }
+    /** Validate the number, then ask Firebase to text a code. Ignored while a request is in flight. */
+    fun startPhoneVerification(country: CountryCode, nationalNumberInput: String) {
+        if (_phoneState.value.busy) return
+        val problem = PhoneNumbers.errorFor(country, nationalNumberInput)
+        if (problem != null) {
+            _error.value = problem
+            return
+        }
+        val phoneNumber = PhoneNumbers.normalize(country, nationalNumberInput)
+        if (phoneNumber == null) {
+            _error.value = "That number was not accepted. Check it and try again."
+            return
+        }
+        _error.value = null
+        _phoneState.update { it.copy(requesting = true) }
         viewModelScope.launch {
             try {
-                googleSignIn.completeBrowserRedirect(uri)?.let { handleGoogleOutcome(it) }
+                handlePhoneOutcome(repository.startPhoneVerification(phoneNumber))
             } finally {
-                _uiState.update { it.copy(signingIn = false) }
+                _phoneState.update { it.copy(requesting = false) }
             }
         }
     }
 
-    /**
-     * A browser return without a callback is a cancellation. A callback already being exchanged,
-     * or a native request still in flight, is protected by the client's single-flight locks.
-     */
-    fun onForeground() {
+    /** Re-send the code; the repository enforces the minimum interval as well. */
+    fun resendPhoneCode() {
+        if (_phoneState.value.busy || !_phoneState.value.codeSent) return
+        if (_phoneState.value.resendSecondsRemaining > 0) return
+        _error.value = null
+        _phoneState.update { it.copy(requesting = true) }
         viewModelScope.launch {
-            val outcome = googleSignIn.cancelBrowserSignIn()
-            if (outcome == GoogleSignInOutcome.Cancelled) {
-                _uiState.update { it.copy(signingIn = false) }
+            try {
+                handlePhoneOutcome(repository.resendPhoneCode())
+            } finally {
+                _phoneState.update { it.copy(requesting = false) }
             }
         }
     }
 
-    private suspend fun handleGoogleOutcome(outcome: GoogleSignInOutcome) {
-        when (outcome) {
-            // Dismissing the account picker is a decision, not a failure. Showing an error here
-            // would punish people for changing their mind.
-            GoogleSignInOutcome.Cancelled -> Unit
+    /** Verify the code. Duplicate submissions are rejected before a second request is built. */
+    fun submitPhoneCode(code: String) {
+        if (_phoneState.value.verifying) return
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) {
+            _error.value = "Enter the code RushIt texted you."
+            return
+        }
+        _error.value = null
+        _phoneState.update { it.copy(verifying = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.submitPhoneCode(trimmed)) {
+                    AuthResult.Success -> {
+                        _phoneState.value = PhoneLoginUiState()
+                        stopResendCountdown()
+                    }
 
-            // These are internal signals. The concrete client retries/falls back before returning;
-            // a fake or future client must never turn them into a false "no device account" claim.
-            GoogleSignInOutcome.NoCredentialAvailable -> _error.value = GoogleSignInMessages.UNKNOWN
-            GoogleSignInOutcome.Unsupported -> _error.value = GoogleSignInMessages.PLAY_SERVICES
-            GoogleSignInOutcome.BrowserPending -> Unit
-            GoogleSignInOutcome.BrowserSuccess -> {
-                when (val result = repository.refreshAccount()) {
-                    AuthResult.Success -> Unit
                     is AuthResult.Failure -> _error.value = result.message
                 }
-            }
-
-            GoogleSignInOutcome.Unconfigured -> _error.value = GoogleSignInMessages.UNCONFIGURED
-
-            is GoogleSignInOutcome.Failed -> _error.value = outcome.message
-
-            is GoogleSignInOutcome.Success -> {
-                val check = GoogleIdTokenValidator.validate(
-                    idToken = outcome.idToken,
-                    expectedAudience = webClientId,
-                    rawNonce = outcome.rawNonce,
-                    nowEpochSeconds = nowEpochSeconds(),
-                )
-                if (check is IdTokenCheck.Rejected) {
-                    _error.value = check.message
-                    return
-                }
-                when (val result = repository.signInWithGoogle(outcome.idToken, outcome.rawNonce)) {
-                    AuthResult.Success -> Unit
-                    is AuthResult.Failure -> _error.value = result.message
-                }
+            } finally {
+                _phoneState.update { it.copy(verifying = false) }
             }
         }
+    }
+
+    /** Abandon the pending verification, e.g. when the person wants to change the number. */
+    fun changePhoneNumber() {
+        stopResendCountdown()
+        _phoneState.value = PhoneLoginUiState()
+        _error.value = null
+        viewModelScope.launch { repository.cancelPhoneVerification() }
+    }
+
+    private fun handlePhoneOutcome(outcome: PhoneVerificationOutcome) {
+        when (outcome) {
+            PhoneVerificationOutcome.CodeSent -> {
+                _phoneState.update { it.copy(codeSent = true) }
+                startResendCountdown()
+            }
+
+            // Instant verification/auto-retrieval signed the person in; navigation follows the state
+            // change, so there is nothing else to do here.
+            PhoneVerificationOutcome.Completed -> {
+                _phoneState.value = PhoneLoginUiState()
+                stopResendCountdown()
+            }
+
+            is PhoneVerificationOutcome.Failure -> _error.value = outcome.message
+        }
+    }
+
+    private fun startResendCountdown() {
+        stopResendCountdown()
+        resendJob = viewModelScope.launch {
+            var remaining = RESEND_SECONDS
+            while (remaining > 0) {
+                _phoneState.update { it.copy(resendSecondsRemaining = remaining) }
+                delay(1_000L)
+                remaining--
+            }
+            _phoneState.update { it.copy(resendSecondsRemaining = 0) }
+        }
+    }
+
+    private fun stopResendCountdown() {
+        resendJob?.cancel()
+        resendJob = null
+        _phoneState.update { it.copy(resendSecondsRemaining = 0) }
     }
 
     /** Save onboarding or a profile edit. Ignored while another save is in flight. */
@@ -265,11 +336,16 @@ class AuthViewModel(
         get() = (repository.authState.value as? AuthState.RecoverableError)?.action
 
     private fun publish(state: AuthState) {
-        _error.value = when (state) {
-            is AuthState.RecoverableError -> state.message
-            // A failed sign-in sets its own message after this state is published, so clearing here
-            // does not hide it.
-            else -> null
+        when (state) {
+            // The state carries its own explanation, so the banner and the retry control agree.
+            is AuthState.RecoverableError -> _error.value = state.message
+            // Reaching a usable account means the previous failure is no longer true.
+            is AuthState.Authenticated, is AuthState.ProfileIncomplete -> _error.value = null
+            // Deliberately NOT cleared for Unauthenticated: a failed sign-in publishes
+            // Unauthenticated first and sets its message immediately afterwards, so clearing here
+            // would wipe the message that was just produced. Each action clears it at the start of
+            // its next attempt instead.
+            else -> Unit
         }
 
         val event = routeFor(state) ?: return
@@ -289,6 +365,8 @@ class AuthViewModel(
     }
 
     companion object {
+        private const val RESEND_SECONDS = 30
+
         fun factory(repository: AuthRepository, googleSignIn: GoogleSignInClient) =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

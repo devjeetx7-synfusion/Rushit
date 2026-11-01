@@ -1,280 +1,330 @@
-# RushIt — Google Sign-In and Supabase account setup
+# RushIt authentication setup — Firebase Auth + Supabase
 
-This is the manual configuration that RushIt cannot do for itself. The app-side implementation is
-covered by unit tests and a configured CI APK build; **the external Google Cloud/Supabase console
-steps and a live device sign-in still require manual verification**. Until they
-are done, the app reports its own configuration state honestly instead of pretending to sign anybody
-in.
+This document is the complete, ordered setup for RushIt's authentication. Everything in the
+**Android application** is already implemented; what remains is console configuration and applying one
+database migration.
 
-What happens today with no configuration:
-
-| Missing value | Behaviour |
-| --- | --- |
-| `GOOGLE_WEB_CLIENT_ID` | Tapping **Continue with Google** shows "Google Sign-In is not configured in this build…". No request is made and nobody is signed in. |
-| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Start-up lands on the login screen with "RushIt is not connected to its account service in this build…". The Supabase client is never used. |
-| Google provider not enabled in Supabase | Credential Manager succeeds, then Supabase rejects the token; the app shows a Google-provider configuration message. |
-| Migrations not applied | Profile provisioning fails and the error is surfaced; nothing is silently half-created. |
-| `delete-account` function not deployed | **Delete account** reports that deletion is unavailable. No data is removed and the user stays signed in. |
+**Read this first, in one sentence:** Firebase Authentication issues the identity (Google sign-in and
+phone SMS code), Supabase stores the profile data, and Supabase authorizes each request by verifying
+the Firebase ID token — using Supabase's supported Third-Party Auth integration, not a custom
+token exchange and not Supabase Auth.
 
 ---
 
-## 1. Google Cloud Console
+## 0. What the app does versus what you configure
 
-Project: create one or reuse an existing project at <https://console.cloud.google.com>.
+| Concern | Owner | Where it lives |
+| --- | --- | --- |
+| Who the user is | Firebase Authentication | `data/auth/firebase/FirebaseAuthGateway.kt` |
+| Google account picker | Jetpack Credential Manager | `data/auth/google/CredentialManagerGoogleSignIn.kt` |
+| Phone number → SMS code | Firebase Authentication | same gateway |
+| Orchestration, state, error mapping | `FirebaseAuthRepository` | `data/auth/FirebaseAuthRepository.kt` |
+| Profile, settings, activity data | Supabase PostgreSQL + RLS | `data/auth/SupabaseProfileGateway.kt` |
+| Handing the Firebase token to Supabase | `SupabaseIdentityBridge` | `data/auth/supabase/SupabaseIdentityBridge.kt` |
+| Database schema, policies, admin roles | Supabase migration | `supabase/migrations/20261101090000_firebase_identity.sql` |
 
-### 1.1 OAuth consent screen
-
-**APIs & Services → OAuth consent screen**
-
-- User type: **External** (unless the organisation uses Google Workspace and wants Internal).
-- App name: `RushIt`. Support email: a real, monitored address.
-- Authorized domains: your own domain (for example `rushit.example`). The consent screen requires a
-  domain you control; a `supabase.co` subdomain is not appropriate here.
-- Scopes: `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`. RushIt requests no other
-  scope, and never asks for a Google password.
-- Privacy policy and Terms of Service links: the same real URLs used for `RUSHIT_TERMS_URL` and
-  `RUSHIT_PRIVACY_URL`.
-
-**Publishing status**
-
-- While the status is **Testing**, only accounts listed under *Test users* (100 maximum) can sign in.
-  Anyone else sees `access_denied`. Add every tester's Google account here first.
-- Moving to **In production** removes the test-user restriction. For an External consent screen,
-  Google may show an "unverified app" warning until the app passes Google's OAuth verification, which
-  requires the privacy policy, a home page on the authorized domain, and (for sensitive scopes) a
-  review. RushIt requests only non-sensitive scopes, so verification is the lighter path.
-
-### 1.2 Web application OAuth client — this is the ID token audience
-
-**APIs & Services → Credentials → Create credentials → OAuth client ID**
-
-- Application type: **Web application**.
-- Name: `RushIt Web (Supabase audience)`.
-- Authorized redirect URI: add `https://YOUR_PROJECT.supabase.co/auth/v1/callback`. This is the
-  Google-to-Supabase callback used by the browser fallback. RushIt first tries Credential Manager's
-  native ID-token flow; if no matching credential or Play Services support is available, it uses
-  Supabase's official PKCE browser flow. The app's own return URL is `rushit://auth/callback`
-  (configured in Supabase URL Configuration below, not as a Google Web redirect URI).
-- Copy the resulting **Client ID** — it becomes `GOOGLE_WEB_CLIENT_ID` in the app build *and* the
-  client ID in the Supabase Google provider. Both must be the same value, because Supabase verifies
-  that the token's `aud` claim matches a client ID it was configured with.
-- The **client secret** for this client belongs in Supabase only. It must never be placed in the
-  repository, in `local.properties`, or in the APK. `app/build.gradle.kts` fails the build if a
-  `GOOGLE_CLIENT_SECRET` property is supplied.
-
-### 1.3 Android OAuth client — lets Google recognise the app
-
-**Create credentials → OAuth client ID**
-
-- Application type: **Android**.
-- Name: `RushIt Android`.
-- Package name: `com.rushit.app` — it must match `applicationId` in `app/build.gradle.kts` exactly.
-- SHA-1 certificate fingerprint: add one entry per signing identity that will run the app.
-
-Get the debug SHA-1:
-
-```sh
-./gradlew :app:signingReport
-# or directly:
-keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android
-```
-
-For release builds add the SHA-1 of the release keystore, **and** the SHA-1 of the *Play App Signing*
-key if the app is distributed through Google Play — Play re-signs the APK, so the upload key's
-fingerprint alone is not enough. Both appear under *Play Console → Setup → App integrity*.
-
-The Android client ID itself is never referenced in RushIt's code: Credential Manager matches the
-app by package name plus signing fingerprint. Adding it to the Supabase provider's *Authorized Client
-IDs* is optional and only matters if a future flow requests a token audience other than the Web
-client.
+There is **no** Supabase Auth sign-in, sign-up, refresh, OAuth or password call anywhere in the app,
+and no `rushit://` deep link, no Custom Tab and no browser redirect.
 
 ---
 
-## 2. Supabase
+## 1. Prerequisites
 
-### 2.1 Enable the Google provider
+* A Firebase project (recommended: one per environment, e.g. `rushit-app`).
+* Owner/editor access to that Firebase project and to the Supabase project
+  (`https://uootcypdodfyqfigracp.supabase.co`).
+* Supabase CLI (optional but recommended) and a database backup:
+  `supabase db dump -f before_firebase_identity.sql`.
+* The SHA-1 **and** SHA-256 fingerprints of every key you install the APK with. `./gradlew
+  signingReport` (or `apksigner verify --print-certs app-debug.apk`) prints them.
 
-**Authentication → Providers → Google**
+---
 
-- Enable the provider.
-- **Client ID**: the Web application client ID from §1.2.
-- **Client Secret**: the matching secret from §1.2. This is the only place the secret lives.
-- Leave *Authorized Client IDs* empty unless a non-Web audience is added later.
-- **Authentication → URL Configuration**: add the exact app redirect `rushit://auth/callback` to
-  **Redirect URLs** (allow-list). Keep the Site URL as your real HTTPS product/site URL. The browser
-  fallback uses Supabase PKCE, launches a Custom Tab/browser from the foreground Activity, accepts
-  only the exact `rushit://auth/callback` path, and exchanges the code through the official Supabase
-  SDK using the persisted verifier. It never accepts implicit access/refresh tokens from a URL.
-  Returning from the browser without completing cancels the pending attempt; duplicate callbacks
-  are not exchanged twice.
-- **Authentication → Settings**: keep *Allow new users to sign up* enabled; RushIt creates an account
-  on first Google sign-in. Consider enabling *Secure email change* and rate limits appropriate for
-  production.
+## 2. Firebase console
 
-### 2.2 Apply the database migrations
+### 2.1 Create the project and register the Android app
 
-Two migration files exist, in order:
+1. Firebase console → **Add project** (or open the existing one).
+2. **Project settings → Your apps → Add app → Android**.
+3. Android package name: **`com.rushit.app`** (must match `applicationId` exactly).
+4. Add a SHA-1 for every signing identity:
+   * the local debug key,
+   * the CI persistent test key (if configured),
+   * the Play App Signing key, once the app is distributed.
 
-1. `supabase/migrations/20261031_rushit_auth.sql` — the original schema.
-2. `supabase/migrations/20261031120000_google_auth_accounts.sql` — reconciles that schema to the
-   account model RushIt now uses, and replaces its over-permissive policies.
+   Google sign-in through Credential Manager matches the *Android* OAuth client by package name **and**
+   signing fingerprint. A missing fingerprint produces `GetCredentialProviderConfigurationException`
+   / "no credentials", not a helpful error.
+5. Download **`google-services.json`** and place it at **`app/google-services.json`**.
+   It is git-ignored. Gradle applies the `google-services` plugin only when that file exists and emits
+   `BuildConfig.FIREBASE_CONFIGURED`; without it the app still builds and reports itself as
+   unconfigured instead of crashing.
 
-The second migration is idempotent and forward-only. It does not delete user-authored data; the only
-columns it drops are ones RushIt deliberately stops collecting (`user_devices.device_id`,
-`user_devices.fcm_token`, `user_activity_logs.ip_address`, `user_activity_logs.user_agent`).
+### 2.2 Enable the sign-in methods
 
-```sh
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push          # applies both migrations in order
+1. **Authentication → Sign-in method → Google → Enable.**
+   * Set a support email.
+   * Note the **Web client ID** shown for the Google provider (it also appears under
+     **Project settings → Your apps** as the "Web client (auto created by Google Service)"
+     with id `…apps.googleusercontent.com`).
+   * That value is `GOOGLE_WEB_CLIENT_ID`. It is the **audience** of the Google ID token Firebase will
+     verify, so it must be the *Web* client, never the Android client ID, and never a client secret.
+2. **Authentication → Sign-in method → Phone → Enable.**
+3. **Authentication → Settings → Authorized domains**: leave the defaults unless you add a web client.
+
+### 2.3 Phone verification prerequisites
+
+* Android app verification uses **Play Integrity** when available. Add your release SHA-256 under
+  **Project settings → App Check** (and register the app there) so production builds pass. Debug builds
+  fall back to the reCAPTCHA/disabled-app-verification path and still work.
+* **Test phone numbers (mandatory for testing):** Authentication → Sign-in method → Phone →
+  **Phone numbers for testing**. Add a number (e.g. `+91 9999999999`) with a fixed code
+  (e.g. `123456`). These never send an SMS and are not billed.
+* SMS quota: new Firebase projects have a low daily SMS limit; a real number can fail with
+  `ERROR_QUOTA_EXCEEDED`. Use test numbers instead of spending money.
+* Billing: phone sign-in requires the project's billing/quota to be in order, otherwise
+  `ERROR_BILLING_NOT_ENABLED` appears.
+
+---
+
+## 3. Supabase: trust Firebase ID tokens
+
+This is Supabase's **supported** integration: Supabase verifies the Firebase JWT's signature, issuer
+and audience before any SQL runs, and maps the token's claims into `auth.jwt()`.
+
+### 3.1 Register the Firebase project
+
+**Dashboard route**
+
+1. Supabase Dashboard → **Authentication → Sign In / Providers → Third-Party Auth**.
+2. Add provider **Firebase**, enter the Firebase **Project ID** (e.g. `rushit-app`), save.
+
+**CLI route** (`supabase/config.toml`)
+
+```toml
+[auth.third_party.firebase]
+enabled = true
+project_id = "rushit-app"
 ```
 
-Or paste `20261031120000_google_auth_accounts.sql` into the Supabase SQL editor. **Review it against
-your production data before running it there** — in particular, creating the case-insensitive unique
-index on `lower(username)` fails loudly if two existing rows differ only by letter case, and the
-migration stops rather than choosing for you.
+Notes that matter:
 
-What the migration establishes:
+* Firebase ID tokens are signed with **asymmetric** keys and carry a `kid`, which is what Supabase
+  requires. Rotation is picked up automatically (within about 30 minutes).
+* Supabase rejects tokens whose `iss` is not `https://securetoken.google.com/<project-id>` or whose
+  `aud` is not the project id. Tokens from any other Firebase project are refused **before** the
+  database is involved.
+* Supabase Auth cannot be disabled, but RushIt never calls it. It is simply unused.
 
-- `profiles`, `user_settings`, `user_devices`, `user_activity_logs`, all owned by
-  `auth.users.id` with `ON DELETE CASCADE`.
-- RLS enabled on all four, with `USING` **and** `WITH CHECK` on every UPDATE policy, and no policy at
-  all for `anon`.
-- Column-level grants so a client cannot write `profiles.id` or `profiles.phone_verified` even with a
-  valid row policy.
-- `handle_new_user()` — a `SECURITY DEFINER` trigger on `auth.users` that provisions one profile and
-  one settings row with `ON CONFLICT DO NOTHING`, so concurrent sign-ins cannot duplicate a row.
-- `username_available(text)` — the only cross-account read, returning a boolean and nothing else.
-- `delete_user_account()` — the fallback deletion path, authorized by `auth.uid()`.
+### 3.2 Give every user the `authenticated` role claim (required)
 
-### 2.3 Deploy account deletion
+Supabase decides the Postgres role from the JWT's `role` claim. A Firebase token has no such claim, so
+without this step every request runs as `anon` and **every policy denies it**. That is the single most
+common cause of "signed in but everything is empty".
 
-Preferred path — an Edge Function that verifies the caller's own JWT and uses the Admin API:
+Pick one, and do it for both new **and** existing users:
+
+**Option A — blocking functions (recommended for new users)**
+
+```ts
+// functions/src/index.ts, deployed with the Firebase CLI
+import { beforeUserCreated, beforeUserSignedIn } from "firebase-functions/v2/identity";
+
+export const beforecreated = beforeUserCreated((event) => ({
+  customClaims: { role: "authenticated" },
+}));
+
+export const beforesignedin = beforeUserSignedIn((event) => ({
+  customClaims: { role: "authenticated" },
+}));
+```
+
+**Option B — Admin SDK for users that already exist**
+
+```ts
+// Run once, server-side, with a service-account key. NEVER ship this key in the Android app.
+import { initializeApp, cert } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+
+const app = initializeApp({ credential: cert(process.env.GOOGLE_APPLICATION_CREDENTIALS!) });
+const auth = getAuth(app);
+
+for await (const page of /* listUsers pagination */ []) {
+  for (const user of page.users) {
+    await auth.setCustomUserClaims(user.uid, { role: "authenticated" });
+  }
+}
+```
+
+The claim only appears in a **newly minted** token. RushIt forces one refresh immediately after
+sign-in (`installToken(forceRefresh = true)`) precisely for this, and a user who was signed in before
+the claim existed is fixed automatically on their next sign-in.
+
+### 3.3 Apply the database migration
+
+```sh
+supabase link --project-ref uootcypdodfyqfigracp
+supabase db push
+```
+
+`supabase/migrations/20261101090000_firebase_identity.sql` is forward-only and non-destructive:
+
+* adds `profiles.firebase_uid text` with a unique index (one profile per Firebase account);
+* gives `profiles.id` a `gen_random_uuid()` default so the client never chooses an id;
+* drops the `auth.users` foreign keys and points the child tables at `public.profiles(id)`;
+* rewrites every RLS policy to `(select auth.jwt() ->> 'sub')` against `firebase_uid`;
+* adds `current_firebase_uid()`, `current_profile_id()`, `admin_roles`, `is_admin()`, and a safe
+  replacement for `delete_user_account()`;
+* keeps every existing row, with `firebase_uid = NULL` for legacy Supabase-Auth rows.
+
+Verify afterwards (the queries are printed at the end of the migration file):
+
+```sql
+select count(*) filter (where firebase_uid is null) as legacy,
+       count(*) filter (where firebase_uid is not null) as linked
+  from public.profiles;
+
+select tablename, policyname from pg_policies
+ where schemaname = 'public'
+   and coalesce(qual, '') || coalesce(with_check, '') like '%auth.uid()%';   -- expect zero rows
+
+select relname, relrowsecurity from pg_class
+ where relname in ('profiles','user_settings','user_devices','user_activity_logs','admin_roles');
+```
+
+### 3.4 Administrator authorization
+
+Administrators are rows, never claims the client can mint:
+
+```sql
+-- Run in the SQL editor / with a service role. There is deliberately no client-writable policy.
+insert into public.admin_roles (firebase_uid, role, granted_by)
+values ('<verified firebase uid of the administrator>', 'admin', 'setup')
+on conflict (firebase_uid) do update set role = excluded.role;
+```
+
+`public.is_admin()` returns true for a caller whose **verified** `sub` is listed, and it is the only
+thing an admin policy consults. `admin_roles` has RLS enabled, no policies and no grants to `anon` or
+`authenticated`, so no client can read or write it.
+
+### 3.5 Optional: the account-deletion Edge Function
+
+The app deletes the Firebase account and its own profile row without any server help. The function is
+only a fallback for "Firebase account gone, profile purge failed":
 
 ```sh
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service-role key>
+supabase secrets set FIREBASE_PROJECT_ID=<firebase project id>
 supabase functions deploy delete-account
 ```
 
-Source: `supabase/functions/delete-account/index.ts`. Keep JWT verification **enabled** (the default).
-The service-role key exists only in the function's environment; the app never sees it, and
-`app/build.gradle.kts` rejects any recognizable service-role or `sb_secret_` key at build time.
-
-If the function is not deployed, the app falls back to the `delete_user_account()` RPC created by the
-migration. If neither exists, deletion reports that it is unavailable and changes nothing.
-
-### 2.4 Verify the RLS policies
-
-```sh
-supabase start
-supabase db reset
-supabase test db        # runs supabase/tests/rls_isolation.sql
-```
-
-`supabase/tests/rls_isolation.sql` asserts that User A cannot read or modify User B's rows, that
-`anon` reads nothing, that `phone_verified` cannot be self-set, and that username availability works
-across accounts. These tests need the Supabase CLI and Docker; they are **not** part of the Gradle
-build and were **not** executed for this change.
+It verifies the caller's Firebase ID token against Google's JWKS (`iss` and `aud` pinned) and deletes
+rows by the verified `sub`. It never deletes the Firebase user (that needs the Admin SDK and must
+happen while the person is present to reauthenticate).
 
 ---
 
-## 3. Build configuration
+## 4. Build configuration
 
-No credential is committed. Put them in the **ignored** root `local.properties`, or supply them as
-Gradle properties or environment variables:
+`app/build.gradle.kts` reads these from a Gradle property, the ignored `local.properties`, or the
+environment. Public values only.
 
 ```properties
-SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+# local.properties (git-ignored)
+SUPABASE_URL=https://uootcypdodfyqfigracp.supabase.co
 SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY
 GOOGLE_WEB_CLIENT_ID=000000000000-xxxxxxxx.apps.googleusercontent.com
-
-# Optional, real HTTPS destinations owned by your organization:
 RUSHIT_TERMS_URL=https://YOUR_REAL_TERMS_URL
 RUSHIT_PRIVACY_URL=https://YOUR_REAL_PRIVACY_URL
 ```
 
-These become `BuildConfig` fields and are embedded in the APK, so they are **public by design**. Only
-a publishable/anon key belongs here. There is no `GOOGLE_CLIENT_SECRET` field, and adding one fails
-the build.
+Plus `app/google-services.json` from step 2.1.
 
-For CI, set the same names as repository **Variables** (not Secrets — they are public values):
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GOOGLE_WEB_CLIENT_ID`, `RUSHIT_TERMS_URL`,
-`RUSHIT_PRIVACY_URL`. The `RushIt User Build` workflow passes them to
-`:app:testDebugUnitTest` and `:app:assembleDebug`.
+CI supplies the same values as repository **variables**, including `GOOGLE_SERVICES_JSON` (the raw
+file contents), which the workflow writes to `app/google-services.json`.
 
-A build with blank values still compiles and still runs its unit tests; at runtime the app reports
-that Google Sign-In or the account service is not configured.
+The build **fails** if `GOOGLE_CLIENT_SECRET` is supplied, if `GOOGLE_WEB_CLIENT_ID` is not a Web
+client id, if `SUPABASE_URL` is not a bare HTTPS origin, or if `SUPABASE_ANON_KEY` is anything other
+than a publishable key or a legacy `role: anon` JWT.
 
----
-
-## 4. End-to-end check on a device
-
-This is the check that must be performed by someone with the credentials above. It has **not** been
-run for this change.
-
-1. Install a debug build made with all five values set, on a device whose Google account is in the
-   consent screen's test-user list.
-2. Tap **Continue with Google** → the account picker opens → choose an account.
-3. First run: onboarding appears with the Google name and photo pre-filled. Enter a display name,
-   optionally a username, and save. Home opens.
-4. Kill the app and relaunch: it goes straight to Home with no login screen flash.
-5. Account → Edit profile: change the display name, save, kill and relaunch. The change persists.
-6. Sign in with a second Google account on another device: separate profile, no shared data.
-7. Account → Sign out → the login screen appears and the back button cannot return to Home.
-8. Sign in again with the first account: the customized name and avatar are still there.
-9. Account → Delete account → type `DELETE` → confirm. The user returns to login, and in the Supabase
-   dashboard the row is gone from `auth.users`, `profiles` and `user_settings`.
-10. Turn on airplane mode and relaunch: the app explains that the session could not be confirmed and
-    offers **Retry**; it does not sign the user out.
+**Never** place the following in the APK, the repository, Gradle files or CI variables that reach the
+build: a Google OAuth client secret, a Firebase Admin service-account key, a Supabase service-role key
+or `sb_secret_…` key. The app authenticates with Firebase and authorizes with RLS; it needs none of
+them.
 
 ---
 
-## 5. What RushIt keeps out of the APK
+## 5. Verification checklist
 
-- No Google OAuth **client secret**. Credential Manager only needs the public Web client ID.
-- No Supabase **service-role** or `sb_secret_` key. The build fails if one is supplied.
-- No hard-coded credential of any kind; all five values come from the build environment.
-- Refresh and access tokens are serialized by the Supabase SDK and stored through
-  `SecureSessionStore`, encrypted with a non-exportable Android Keystore AES/GCM key.
-  `android:allowBackup` is `false`, so the ciphertext is never copied to a device that lacks the key.
-- Tokens are never written to logs, to `user_activity_logs`, or to any user-facing message.
-  `RestException.message` is deliberately never shown: supabase-kt builds it from the request URL and
-  headers, which include the anon key and the bearer token.
+Run these in order; each one has an observable outcome.
 
-## 6. Future phone authentication
+1. `./gradlew :app:testDebugUnitTest` — the auth unit tests (repository, ViewModel, phone rules,
+   Google transport and single-flight, error mapping, startup routing) pass without a device, network
+   or Firebase project.
+2. `./gradlew :app:assembleDebug` then `apksigner verify --min-sdk-version 24 app-debug.apk`.
+3. Install and tap **Continue with Google**: the real account picker appears; cancelling shows no error;
+   a first-time account lands on onboarding with the Google name/photo pre-filled.
+4. Kill and relaunch: the app goes straight to Home without showing the login screen first.
+5. Sign out: back to Login, and the back button does not return to Home.
+6. Open the phone screen and use a **Firebase test number**: the code field appears, a wrong code
+   keeps it open with a readable message, resend is disabled for 30 seconds, the right code signs in.
+7. Profile edit: change the name/username/photo; the values survive a restart; a duplicate username is
+   rejected with a readable message.
+8. Account deletion: the account is removed, the app returns to Login, and a second sign-in with the
+   same Google account creates a fresh profile.
+9. In Supabase, confirm exactly one `profiles` row per Firebase UID and that a request with another
+   user's token sees nothing:
 
-Phone sign-in is intentionally absent. The schema already carries `profiles.phone_number` (unique,
-nullable) and `profiles.phone_verified`, which no client can set — the column has no `UPDATE` grant.
-`AuthProviderId` and `AuthGateway.signInWithIdToken(provider, …)` are provider-parameterized, and
-account ownership is always `auth.users.id`, so a verified phone identity can later be linked to an
-existing account through Supabase identities without creating a second profile. Nothing merges
-accounts on the basis of a matching email or user-supplied metadata.
+   ```sh
+   curl -s "$SUPABASE_URL/rest/v1/profiles?select=id,firebase_uid" \
+        -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $FIREBASE_ID_TOKEN"
+   ```
 
+   The response must contain only the caller's row. `[]` means the role claim is missing (step 3.2).
 
-## Google Sign-In request and fallback behaviour
+---
 
-RushIt uses `androidx.credentials.CredentialManager.getCredential(activity, request)` with
-`GetGoogleIdOption` (not the deprecated `GoogleSignInClient` API). The server client ID is the Web
-OAuth client ID. Each tap generates a fresh UUID nonce, sends its lowercase SHA-256 hex digest to
-Google, and retains the raw nonce for Supabase. The first request sets
-`filterByAuthorizedAccounts(true)` and auto-select; `NoCredentialException` triggers a second
-request with `filterByAuthorizedAccounts(false)` and the same nonce. That exception is **not** a
-diagnosis that the device has no Google account. Picker cancellation stops immediately.
+## 6. Troubleshooting
 
-Before the native ID token reaches Supabase, RushIt checks issuer, subject, audience, expiry (with
-bounded clock skew), and nonce parity/hash. Supabase performs authoritative token verification.
-Each credential stage re-resolves the current RESUMED Activity through a weak lifecycle tracker.
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| "Sign-in is not configured in this build" | No `google-services.json` at `app/google-services.json` | Add the file, rebuild |
+| Account picker never appears / `GetCredentialProviderConfigurationException` | Missing SHA-1 for this signing key, or Google provider disabled | Add the fingerprint; enable the Google provider |
+| Google sign-in returns to the app but Firebase rejects it | `GOOGLE_WEB_CLIENT_ID` is the Android client id, or belongs to another Firebase project | Use the **Web** client id of the same Firebase project |
+| `ERROR_OPERATION_NOT_ALLOWED` | Phone or Google provider not enabled in Firebase | Enable it in Authentication → Sign-in method |
+| `ERROR_APP_NOT_AUTHORIZED` / `ERROR_INVALID_APP_CREDENTIAL` | App verification failed (Play Integrity/reCAPTCHA) | Register App Check and the SHA-256; use test numbers |
+| `ERROR_TOO_MANY_REQUESTS` / `ERROR_QUOTA_EXCEEDED` | SMS quota/rate limit | Wait, or use Firebase test numbers |
+| Signed in, but every table read is empty and no error appears | The Firebase token has no `role: "authenticated"` claim, so PostgREST runs as `anon` | Step 3.2, then sign in again |
+| PostgREST returns 401/`PGRST301` with a valid token | Supabase project does not trust this Firebase project | Step 3.1, check `project_id` |
+| Profile row created but only readable by nobody | `firebase_uid` was written for a different Firebase project's uid | Check the token's `iss`/`aud`; delete the stray row and sign in again |
+| Delete account says "please sign in again" | Firebase requires a recent login for deletion | Sign in again, then delete |
 
-If both native stages have no credential, or Credential Manager/Play Services is unavailable, the
-app-scoped coordinator starts the official Supabase browser OAuth fallback when Supabase is
-configured. User cancellation and ordinary network/token errors do not silently start a browser.
-The SDK persists its PKCE verifier across process recreation; callbacks without that verifier are
-rejected. Browser sessions are imported by `exchangeCodeForSession`, then the normal account/profile
-restore path runs. There is no client-side browser ID token to pre-validate; Supabase verifies the
-provider response server-side. No OAuth client secret is present in the app.
+---
 
-Manual device checks still required: authorized and first-time accounts, picker cancellation,
-rotation during the picker, a device without supported Play Services, browser cancellation,
-process death before the callback, duplicate callback delivery, offline exchange, and the exact
-Supabase redirect allow-list entry above. Unit tests are not evidence of a live Google/Supabase
-sign-in.
+## 7. Rolling back
+
+The Android changes cannot be rolled back halfway: the old Supabase-Auth classes were deleted. The
+database, however, is left fully intact by the migration (no tables, rows or content columns are
+dropped), so an application rollback to an older APK would still find its `auth.users` identities and
+`profiles` rows. The only additive changes are `firebase_uid`, the unique index, the helper functions,
+`admin_roles`, the rewritten policies and the child-table foreign keys — nothing needs to be undone to
+run the previous build, although its policies would then be the new (Firebase-based) ones.
+
+## 8. What is deliberately not automated
+
+* Creating the Firebase project, enabling providers, adding SHA fingerprints, and downloading
+  `google-services.json` require console access.
+* Registering the Firebase project in Supabase and assigning `role: "authenticated"` require console
+  or server-side access.
+* Applying the migration to the live project requires explicit authorization; review it first.
+* Linking a **legacy** Supabase-Auth profile to a Firebase account is a manual, audited `update`:
+
+  ```sql
+  update public.profiles
+     set firebase_uid = '<verified firebase uid>'
+   where id = '<legacy supabase uuid>'
+     and firebase_uid is null;
+  ```
+
+  Do this only after verifying out of band that both identities belong to the same person. RushIt never
+  merges accounts on a matching email, phone number or name.

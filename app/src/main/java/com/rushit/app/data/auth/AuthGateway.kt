@@ -1,16 +1,43 @@
 package com.rushit.app.data.auth
 
-import com.rushit.app.data.model.Profile
+/**
+ * Authentication providers RushIt understands.
+ *
+ * Both providers are Firebase Authentication providers. Account ownership is always the Firebase
+ * UID, so one person can only ever have one RushIt profile per Firebase account, and linking a
+ * phone identity to a Google identity is a Firebase account-linking decision rather than an
+ * application-side merge.
+ */
+enum class AuthProviderId(val wireValue: String, val firebaseProviderId: String) {
+    GOOGLE("google", "google.com"),
+    PHONE("phone", "phone"),
+    ;
+
+    companion object {
+        fun fromWireValue(value: String?): AuthProviderId? =
+            values().firstOrNull { it.wireValue.equals(value, ignoreCase = true) }
+
+        fun fromFirebaseProviderId(value: String?): AuthProviderId? =
+            values().firstOrNull { it.firebaseProviderId.equals(value, ignoreCase = true) }
+    }
+}
 
 /**
- * The facts the app is allowed to depend on from a Supabase session.
+ * The facts the app is allowed to depend on from a Firebase session.
  *
- * Reducing `UserSession` to this shape keeps orchestration logic free of the SDK and of Android,
- * which is what makes it unit-testable on the JVM.
+ * Reducing the signed-in user to this shape keeps orchestration logic free of the Firebase SDK and
+ * of Android, which is what makes it unit-testable on the JVM.
+ *
+ * @property uid the Firebase UID — the canonical account identifier for every RushIt record
+ * @property email the email Firebase reported, when the provider supplied one. Phone-only accounts
+ * have no email, so nothing may require it
+ * @property phoneNumber the E.164 phone number Firebase verified, when available
+ * @property memberSinceEpochSeconds account creation time from Firebase, never from the device
  */
-data class SessionSnapshot(
-    val userId: String,
+data class AuthIdentity(
+    val uid: String,
     val email: String?,
+    val phoneNumber: String?,
     val provider: AuthProviderId,
     val memberSinceEpochSeconds: Long?,
     val suggestedFullName: String?,
@@ -18,101 +45,110 @@ data class SessionSnapshot(
     val suggestedAvatarUrl: String?,
 )
 
-/** Outcome of a session-restore attempt. */
-sealed interface SessionRestoreResult {
-    /** A session was restored, refreshing it first when it had already expired. */
-    data class Restored(val session: SessionSnapshot) : SessionRestoreResult
+/**
+ * A Firebase ID token, plus the moment it stops being accepted by Supabase.
+ *
+ * The token is never logged, never persisted and never shown; it is handed straight to
+ * [BackendTokenBridge] and used as the `Authorization: Bearer` value for Supabase requests.
+ */
+data class AccessToken(val token: String, val expiresAtEpochSeconds: Long)
 
-    /** Nothing is stored, so there is nothing to restore. */
-    data object NoSession : SessionRestoreResult
+/** Opaque handle for one in-flight Firebase phone verification. */
+data class PhoneChallenge(val id: String)
+
+/** Result of asking Firebase to send a verification code. */
+sealed interface PhoneChallengeStart {
+    /** Firebase sent (or is sending) an SMS and is waiting for the code. */
+    data class CodeSent(val challenge: PhoneChallenge) : PhoneChallengeStart
 
     /**
-     * The stored session could not be verified because Supabase was unreachable.
-     *
-     * @property sessionStillStored whether a session remains on the device and is worth retrying
+     * Firebase verified the phone without a code — instant verification or SMS auto-retrieval —
+     * and the user is now signed in.
      */
-    data class Unreachable(val sessionStillStored: Boolean) : SessionRestoreResult
-
-    /** The refresh token was rejected and the local session was cleared. */
-    data object Rejected : SessionRestoreResult
-}
-
-/** Outcome of an account-deletion attempt. */
-sealed interface DeleteAccountOutcome {
-    /** Supabase deleted the auth user; cascades removed every owned row. */
-    data object Deleted : DeleteAccountOutcome
-
-    /** No trusted deletion endpoint is deployed, so nothing was deleted. */
-    data object NotDeployed : DeleteAccountOutcome
+    data object AutoVerified : PhoneChallengeStart
 }
 
 /**
- * Transport boundary around Supabase.
+ * Transport boundary around Firebase Authentication.
  *
- * Implementations throw on transport failures; [SupabaseAuthRepository] turns those into
- * [AuthFailureKind] values. Only this interface and the models around it are exercised by unit
- * tests, so no method may accept or return an Android or Supabase SDK type.
+ * Implementations throw [AuthGatewayException] for failures that are already safe to show, and
+ * plain transport exceptions otherwise (which [AuthErrors] classifies). Only this interface and the
+ * models around it are exercised by unit tests, so no method may accept or return an Android or
+ * Firebase SDK type.
  */
 interface AuthGateway {
-    /** False when the build has no Supabase URL or key, so no request can ever succeed. */
+    /** False when the build has no Firebase configuration, so no request can ever succeed. */
     val isConfigured: Boolean
 
-    suspend fun restoreSession(): SessionRestoreResult
+    /**
+     * The identity Firebase restored from its own persisted session, or null when nobody is signed
+     * in. Waits for Firebase's first auth-state callback so a cold start cannot be mistaken for a
+     * signed-out user.
+     */
+    suspend fun awaitInitialIdentity(): AuthIdentity?
+
+    /** The currently signed-in identity without contacting the network, or null. */
+    suspend fun currentIdentity(): AuthIdentity?
 
     /**
-     * Force one access-token refresh now.
+     * Sign in with a Google ID token obtained from Credential Manager.
      *
-     * @return whether the refresh succeeded; implementations must serialize concurrent calls so the
-     * same refresh token is never rotated twice
+     * @param idToken the Google OIDC ID token. It is given to Firebase only, never to Supabase
      */
-    suspend fun refreshSession(): Boolean
+    suspend fun signInWithGoogleIdToken(idToken: String): AuthIdentity
 
-    suspend fun signInWithIdToken(
-        provider: AuthProviderId,
-        idToken: String,
-        rawNonce: String?,
-    ): SessionSnapshot
+    /** Ask Firebase to send a verification code to [phoneNumberE164]. */
+    suspend fun startPhoneVerification(phoneNumberE164: String): PhoneChallengeStart
 
-    /** The session of the currently signed-in user, without contacting the network. */
-    suspend fun currentSession(): SessionSnapshot?
+    /** Re-send the code for [challenge], reusing Firebase's resend token. */
+    suspend fun resendPhoneCode(challenge: PhoneChallenge): PhoneChallengeStart
+
+    /** Verify [code] for [challenge] and sign the user in. */
+    suspend fun verifyPhoneCode(challenge: PhoneChallenge, code: String): AuthIdentity
+
+    /** Forget a challenge that will not be completed. */
+    suspend fun discardPhoneChallenge(challenge: PhoneChallenge)
 
     /**
-     * Revoke the current refresh token and always clear local state.
+     * A Firebase ID token for the signed-in user, or null when nobody is signed in.
      *
-     * @return whether the server-side revocation succeeded; local clearing is unconditional so a
-     * failed logout can never leave a session behind on the device
+     * @param forceRefresh true to mint a new token (needed to pick up a custom claim assigned after
+     * sign-in, and before privileged operations)
      */
-    suspend fun signOut(): Boolean
+    suspend fun accessToken(forceRefresh: Boolean): AccessToken?
 
-    suspend fun deleteAccount(): DeleteAccountOutcome
-
-    suspend fun fetchProfile(userId: String): Profile?
+    /** Sign out of Firebase and drop any pending phone verification. */
+    suspend fun signOut()
 
     /**
-     * Create the profile row if, and only if, it does not exist yet.
+     * Delete the Firebase account of the currently signed-in user.
      *
-     * Concurrent calls and repeat sign-ins must not duplicate the row or overwrite saved values,
-     * so the write ignores primary-key conflicts and the row is read back afterwards.
+     * Firebase refuses this when the sign-in is stale, so callers must surface that as
+     * "sign in again and retry" rather than reporting success.
      */
-    suspend fun provisionProfile(userId: String, fullName: String?, avatarUrl: String?): Profile?
+    suspend fun deleteAccount()
+}
 
-    /** Create default `user_settings` for the user if they are missing. */
-    suspend fun ensureSettings(userId: String)
+/**
+ * Hands the current Firebase ID token to the Supabase client.
+ *
+ * Supabase's third-party authentication trusts Firebase ID tokens, so every PostgREST, Storage or
+ * Functions request must carry one as its bearer token. The Supabase SDK only reads the bearer
+ * token from its own session, so this bridge imports the Firebase token there — and nothing else.
+ * Supabase Auth is never used to authenticate anybody: no sign-in, sign-up, refresh or OAuth call
+ * is ever made through it.
+ */
+interface BackendTokenBridge {
+    /** True while a token is available to Supabase requests. */
+    val hasToken: Boolean
 
-    /** Save onboarding or profile edits and mark onboarding complete, returning the stored row. */
-    suspend fun saveProfile(
-        userId: String,
-        fullName: String,
-        username: String?,
-        avatarUrl: String?,
-    ): Profile
-
-    suspend fun usernameTaken(username: String): Boolean
+    /** Install [token] as the bearer token for subsequent Supabase requests. */
+    suspend fun use(token: AccessToken)
 
     /**
-     * Append a minimal activity record. Best-effort: callers must never fail a flow on this.
+     * Remove the token so no later request can be authorized as the previous user.
      *
-     * The metadata map must not contain tokens, secrets, or personally identifying detail.
+     * Called on sign-out, on account deletion, and whenever Firebase reports no session.
      */
-    suspend fun recordActivity(userId: String, eventType: String, metadata: Map<String, String>)
+    suspend fun clear()
 }

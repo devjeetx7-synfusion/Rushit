@@ -26,20 +26,20 @@ object ProfileOnboarding {
     fun requiresOnboarding(profile: Profile?): Boolean = profile?.onboardingCompleted != true
 
     /**
-     * Build the onboarding draft for a session.
+     * Build the onboarding draft for a signed-in identity.
      *
      * Anything the person already saved wins over provider metadata, so re-authenticating never
      * resets a chosen name, username, or avatar.
      */
-    fun draftFor(session: SessionSnapshot, existing: Profile?): ProfileDraft = ProfileDraft(
-        id = session.userId,
-        suggestedFullName = session.suggestedFullName.clean(),
-        suggestedUsername = session.suggestedUsername.clean(),
-        suggestedAvatarUrl = session.suggestedAvatarUrl.clean(),
+    fun draftFor(identity: AuthIdentity, existing: Profile?): ProfileDraft = ProfileDraft(
+        id = identity.uid,
+        suggestedFullName = identity.suggestedFullName.clean(),
+        suggestedUsername = identity.suggestedUsername.clean(),
+        suggestedAvatarUrl = identity.suggestedAvatarUrl.clean(),
         savedFullName = existing?.fullName.clean(),
         savedUsername = existing?.username.clean(),
         savedAvatarUrl = existing?.avatarUrl.clean(),
-        email = session.email.clean(),
+        email = identity.email.clean(),
     )
 
     /**
@@ -48,10 +48,10 @@ object ProfileOnboarding {
      * Provider data is copied in as a convenience but `onboarding_completed` stays false, so the
      * person always confirms their own display name.
      */
-    fun newProfileValues(session: SessionSnapshot): NewProfileValues = NewProfileValues(
-        userId = session.userId,
-        fullName = session.suggestedFullName.clean(),
-        avatarUrl = session.suggestedAvatarUrl.clean(),
+    fun newProfileValues(identity: AuthIdentity): NewProfileValues = NewProfileValues(
+        firebaseUid = identity.uid,
+        fullName = identity.suggestedFullName.clean(),
+        avatarUrl = identity.suggestedAvatarUrl.clean(),
     )
 
     /**
@@ -93,7 +93,7 @@ object ProfileOnboarding {
 }
 
 /** Values for creating a profile row that does not exist yet. */
-data class NewProfileValues(val userId: String, val fullName: String?, val avatarUrl: String?)
+data class NewProfileValues(val firebaseUid: String, val fullName: String?, val avatarUrl: String?)
 
 sealed interface SubmissionResult {
     data class Accepted(val submission: ProfileSubmission) : SubmissionResult

@@ -176,7 +176,8 @@ fun AccountScreen(
                             Spacer(Modifier.height(2.dp))
                             Text("@$it", style = MaterialTheme.typography.bodySmall, color = Coral)
                         }
-                        account.email?.let {
+                        // An email for Google accounts, a phone number for phone-only accounts.
+                        account.contactLine?.let {
                             Spacer(Modifier.height(2.dp))
                             Text(it, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -196,7 +197,7 @@ fun AccountScreen(
                         Column(Modifier.weight(1f)) {
                             Text("You're signed out", style = MaterialTheme.typography.titleMedium, color = Ink)
                             Spacer(Modifier.height(4.dp))
-                            Text("Sign in with Google to sync your RushIt account.", style = MaterialTheme.typography.bodySmall, color = Muted)
+                            Text("Sign in to sync your RushIt account.", style = MaterialTheme.typography.bodySmall, color = Muted)
                         }
                     }
                     Spacer(Modifier.height(14.dp))
@@ -260,7 +261,7 @@ fun AccountScreen(
             )
         } else {
             Spacer(Modifier.height(8.dp))
-            AccountRow(R.drawable.ic_logout_01, "Sign in", "Continue with Google", onSignIn, enabled = !isBusy)
+            AccountRow(R.drawable.ic_logout_01, "Sign in", "Continue with Google or phone", onSignIn, enabled = !isBusy)
         }
 
         if (uiState.signingOut || uiState.deletingAccount) {
@@ -295,7 +296,7 @@ fun AccountScreen(
         AlertDialog(
             onDismissRequest = { if (!isBusy) confirmSignOut = false },
             title = { Text("Sign out?") },
-            text = { Text("You'll need to sign in with Google again to reach your orders and profile.") },
+            text = { Text("You'll need to sign in again to reach your orders and profile.") },
             confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignOut() }, enabled = !isBusy) { Text("Sign out", color = DeepRed) } },
             dismissButton = { TextButton(onClick = { confirmSignOut = false }, enabled = !isBusy) { Text("Cancel", color = Ink) } },
             containerColor = CardWhite,
