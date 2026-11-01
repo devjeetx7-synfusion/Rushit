@@ -69,7 +69,7 @@ fun DeliveryTimeline(
                     .background(if (failed) Border else Success, CircleShape),
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                stages.forEachIndexed { index, stage ->
+                stages.forEachIndexed { index, _ ->
                     val done = !failed && index <= activeStageIndex
                     val current = !failed && index == activeStageIndex
                     StageDot(done = done, current = current, reduced = reduced)

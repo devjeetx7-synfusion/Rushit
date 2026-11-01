@@ -17,7 +17,7 @@ object AdminIcons {
 
     private fun strokedIcon(
         name: String,
-        strokeWidth: Float = 1.85f,
+        @Suppress("UNUSED_PARAMETER") strokeWidth: Float = 1.85f,
         block: ImageVector.Builder.() -> Unit,
     ): ImageVector = ImageVector.Builder(
         name = name,

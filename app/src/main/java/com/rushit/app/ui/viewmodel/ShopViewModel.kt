@@ -282,15 +282,18 @@ class ShopViewModel(context: Context, private val repository: CatalogRepository)
 
 
     fun submitReview(productId: String, review: com.rushit.app.data.model.Review) {
-        _state.update { it.copy(allReviews = listOf(review) + it.allReviews) }
+        val entry = if (review.productId.isBlank()) review.copy(productId = productId) else review
+        _state.update { it.copy(allReviews = listOf(entry) + it.allReviews) }
     }
 
     fun submitComment(productId: String, comment: com.rushit.app.data.model.Comment) {
-        _state.update { it.copy(allComments = listOf(comment) + it.allComments) }
+        val entry = if (comment.productId.isBlank()) comment.copy(productId = productId) else comment
+        _state.update { it.copy(allComments = listOf(entry) + it.allComments) }
     }
 
     fun submitQuestion(productId: String, question: com.rushit.app.data.model.Question) {
-        _state.update { it.copy(allQuestions = listOf(question) + it.allQuestions) }
+        val entry = if (question.productId.isBlank()) question.copy(productId = productId) else question
+        _state.update { it.copy(allQuestions = listOf(entry) + it.allQuestions) }
     }
 
     fun markReviewHelpful(reviewId: String) {

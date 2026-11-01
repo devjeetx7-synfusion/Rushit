@@ -182,13 +182,87 @@ fun ProductReviewsSection(reviews: List<Review>, onHelpful: (String) -> Unit = {
             ReviewCard(review, onHelpful)
             Spacer(Modifier.height(12.dp))
         }
+        var showDialog by remember { mutableStateOf(false) }
         Button(
-            onClick = { /* Demo only */ },
+            onClick = { showDialog = true },
             colors = ButtonDefaults.buttonColors(containerColor = CardWhite, contentColor = Coral),
             border = BorderStroke(1.dp, Coral),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Write a Review")
+        }
+        if (showDialog) {
+            var reviewerName by remember { mutableStateOf("") }
+            var reviewTitle by remember { mutableStateOf("") }
+            var reviewBody by remember { mutableStateOf("") }
+            var rating by remember { mutableIntStateOf(5) }
+            AlertDialog(
+                onDismissRequest = { showDialog = false },
+                title = { Text("Write a Review", style = MaterialTheme.typography.titleMedium, color = Ink) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = reviewerName,
+                            onValueChange = { reviewerName = it },
+                            label = { Text("Your Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = reviewTitle,
+                            onValueChange = { reviewTitle = it },
+                            label = { Text("Review Headline") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = reviewBody,
+                            onValueChange = { reviewBody = it },
+                            label = { Text("Your Experience") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Rating: ", style = MaterialTheme.typography.bodyMedium, color = Ink)
+                            (1..5).forEach { star ->
+                                Text(
+                                    text = if (star <= rating) "★" else "☆",
+                                    color = Coral,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.clickable { rating = star }.padding(4.dp),
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (reviewerName.isNotBlank() && reviewBody.isNotBlank()) {
+                                onSubmitReview(
+                                    Review(
+                                        id = "rev_${System.currentTimeMillis()}",
+                                        productId = "",
+                                        customerName = reviewerName.trim(),
+                                        rating = rating,
+                                        title = reviewTitle.trim().ifBlank { "Customer Review" },
+                                        body = reviewBody.trim(),
+                                        date = "Today",
+                                    )
+                                )
+                                showDialog = false
+                            }
+                        },
+                        enabled = reviewerName.isNotBlank() && reviewBody.isNotBlank(),
+                    ) {
+                        Text("Submit", color = Coral)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDialog = false }) {
+                        Text("Cancel", color = Muted)
+                    }
+                },
+            )
         }
     }
 }

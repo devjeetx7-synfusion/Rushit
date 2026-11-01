@@ -151,6 +151,14 @@ class GoogleCredentialRequestTest {
     }
 
     @Test
+    fun `a whitespace-only ID token is also treated as a missing token failure`() = runTest {
+        val request = GoogleCredentialRequest(clientId) { success("   ") }
+
+        val outcome = request.execute() as GoogleSignInOutcome.Failed
+        assertEquals(GoogleSignInMessages.MISSING_TOKEN, outcome.message)
+    }
+
+    @Test
     fun `a credential that is not a Google ID token is rejected`() = runTest {
         val request = GoogleCredentialRequest(clientId) {
             GetCredentialResponse(CustomCredential("password", Bundle()))

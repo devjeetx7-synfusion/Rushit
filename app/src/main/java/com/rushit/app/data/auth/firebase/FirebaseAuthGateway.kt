@@ -80,8 +80,9 @@ class FirebaseAuthGateway(
                     listener?.let { state.removeAuthStateListener(it) }
                     if (continuation.isActive) continuation.resume(identityOf(state.currentUser))
                 }
-                continuation.invokeOnCancellation { listener?.let { auth.removeAuthStateListener(it) } }
-                auth.addAuthStateListener(listener)
+                val registeredListener = listener
+                continuation.invokeOnCancellation { auth.removeAuthStateListener(registeredListener) }
+                auth.addAuthStateListener(registeredListener)
             }
         }
         return identity ?: identityOf(auth.currentUser)

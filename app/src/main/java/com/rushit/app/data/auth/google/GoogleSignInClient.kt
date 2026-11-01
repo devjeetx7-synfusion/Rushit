@@ -68,6 +68,8 @@ internal fun googleOutcomeFrom(response: GetCredentialResponse): GoogleSignInOut
     ) {
         return GoogleSignInOutcome.Failed(GoogleSignInMessages.UNEXPECTED_CREDENTIAL)
     }
+    val rawIdToken = credential.data.getString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID_TOKEN")
+    if (rawIdToken.isNullOrBlank()) return GoogleSignInOutcome.Failed(GoogleSignInMessages.MISSING_TOKEN)
     val googleCredential = runCatching { GoogleIdTokenCredential.createFrom(credential.data) }
         .getOrElse { return GoogleSignInOutcome.Failed(GoogleSignInMessages.UNREADABLE_TOKEN) }
     val idToken = googleCredential.idToken

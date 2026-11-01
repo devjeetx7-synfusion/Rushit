@@ -322,7 +322,7 @@ fun DemoRiderCard() {
 
 /** Illustrated route screen. Never claims live GPS or an invented ETA. */
 @Composable
-fun OnTheWayScene(order: Order) {
+fun OnTheWayScene(@Suppress("UNUSED_PARAMETER") order: Order) {
     val reduced = LocalReducedMotion.current
     val transition = rememberInfiniteTransition(label = "route")
     val travel by transition.animateFloat(
@@ -355,7 +355,7 @@ fun OnTheWayScene(order: Order) {
 
 /** Approaching: scooter slows down beside the destination. */
 @Composable
-fun AlmostThereScene(order: Order) {
+fun AlmostThereScene(@Suppress("UNUSED_PARAMETER") order: Order) {
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(24.dp))) {
             CityBackdrop(Modifier.fillMaxSize(), travel = 0f)

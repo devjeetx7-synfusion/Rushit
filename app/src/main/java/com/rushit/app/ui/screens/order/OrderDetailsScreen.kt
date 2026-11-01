@@ -77,7 +77,7 @@ fun OrderDetailsScreen(
             return@Column
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp)) {
-            HeaderCard(order, onHelp, onTrack)
+            HeaderCard(order)
             Spacer(Modifier.height(12.dp))
             if (order.status != OrderStatus.CANCELLED && order.status != OrderStatus.FAILED) {
                 Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
@@ -170,7 +170,7 @@ fun OrderDetailsScreen(
 }
 
 @Composable
-private fun HeaderCard(order: Order, onHelp: () -> Unit, onTrack: (String) -> Unit) {
+private fun HeaderCard(order: Order) {
     Surface(shape = RoundedCornerShape(18.dp), color = CardWhite, border = BorderStroke(1.dp, Border)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
