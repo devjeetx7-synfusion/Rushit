@@ -4,50 +4,6 @@ import com.rushit.app.data.model.Profile
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Authentication providers RushIt understands.
- *
- * Google ships in this release. A future verified-phone provider is added by extending this enum
- * only: nothing else in the app branches on the provider, because account ownership is always the
- * Supabase `auth.users` UUID. That is what keeps a later phone identity linkable to the same
- * account instead of creating a second profile.
- */
-enum class AuthProviderId(val wireValue: String) {
-    GOOGLE("google"),
-    ;
-
-    companion object {
-        fun fromWireValue(value: String?): AuthProviderId? =
-            values().firstOrNull { it.wireValue.equals(value, ignoreCase = true) }
-    }
-}
-
-/**
- * A signed-in RushIt account.
- *
- * @property id the Supabase `auth.users.id` UUID — the canonical account identifier
- * @property email the email Supabase verified with the identity provider, shown read-only
- * @property provider the provider that established this session
- * @property memberSinceEpochSeconds account creation time from Supabase, never from the device
- * @property profile the `public.profiles` row owned by [id]
- */
-data class AuthAccount(
-    val id: String,
-    val email: String?,
-    val provider: AuthProviderId,
-    val memberSinceEpochSeconds: Long?,
-    val profile: Profile,
-) {
-    val displayName: String?
-        get() = profile.fullName?.takeIf { it.isNotBlank() }
-
-    val username: String?
-        get() = profile.username?.takeIf { it.isNotBlank() }
-
-    val avatarUrl: String?
-        get() = profile.avatarUrl?.takeIf { it.isNotBlank() }
-}
-
-/**
  * Everything the onboarding form needs, plus the values suggested by the identity provider.
  *
  * Provider data is only ever a *suggestion*: values the person already saved in `profiles` win, so
@@ -77,12 +33,47 @@ data class ProfileDraft(
         get() = !savedFullName.isNullOrBlank() || !savedUsername.isNullOrBlank()
 }
 
+/**
+ * A signed-in RushIt account.
+ *
+ * @property uid the Firebase UID — the canonical account identifier
+ * @property email the email Firebase reports, shown read-only. Null for phone-only accounts
+ * @property phoneNumber the verified phone number, when the account has one
+ * @property provider the provider that established this session
+ * @property memberSinceEpochSeconds account creation time from Firebase, never from the device
+ * @property profile the `public.profiles` row owned by this Firebase UID
+ */
+data class AuthAccount(
+    val uid: String,
+    val email: String?,
+    val phoneNumber: String?,
+    val provider: AuthProviderId,
+    val memberSinceEpochSeconds: Long?,
+    val profile: Profile,
+) {
+    /** Retained for the existing account UI, which shows the canonical identifier. */
+    val id: String get() = uid
+
+    val displayName: String?
+        get() = profile.fullName?.takeIf { it.isNotBlank() }
+
+    val username: String?
+        get() = profile.username?.takeIf { it.isNotBlank() }
+
+    val avatarUrl: String?
+        get() = profile.avatarUrl?.takeIf { it.isNotBlank() }
+
+    /** What to show under the name: an email, or a phone number for phone-only accounts. */
+    val contactLine: String?
+        get() = email?.takeIf { it.isNotBlank() } ?: phoneNumber?.takeIf { it.isNotBlank() }
+}
+
 /** What the UI can offer when authentication stopped in a state that can be retried. */
 enum class RecoveryAction {
     /** Re-run session restoration; used when the device was offline at start-up. */
     RETRY_SESSION,
 
-    /** Ask the person to sign in again; used when a refresh token was rejected. */
+    /** Ask the person to sign in again; used when a session was rejected. */
     SIGN_IN_AGAIN,
 
     /** Nothing can be retried, only acknowledged. */
@@ -95,13 +86,13 @@ enum class RecoveryAction {
  * The set is deliberately small and exhaustive so a `when` over it cannot silently drop a case.
  */
 sealed interface AuthState {
-    /** Start-up: the Supabase client is initializing and the stored session is being restored. */
+    /** Start-up: Firebase is restoring its persisted session and the profile is being read. */
     data object Loading : AuthState
 
     /** No usable session. The login screen is the only destination. */
     data object Unauthenticated : AuthState
 
-    /** A Google sign-in is in flight. Sign-in entry points must be disabled. */
+    /** A Google or phone sign-in is in flight. Sign-in entry points must be disabled. */
     data object Authenticating : AuthState
 
     /** Signed in with a completed profile. Home and the shop are reachable. */
@@ -113,7 +104,8 @@ sealed interface AuthState {
     /**
      * Authentication stopped for a reason worth surfacing.
      *
-     * This is never used for a person cancelling the Google account picker, which is not an error.
+     * This is never used for a person cancelling the Google account picker or the OTP screen, which
+     * is not an error.
      */
     data class RecoverableError(
         val message: String,
@@ -124,23 +116,22 @@ sealed interface AuthState {
 
 /** Coarse failure classes so the UI never has to pattern-match on transport internals. */
 enum class AuthFailureKind {
-    /** The person dismissed the Google account picker. Never shown as an error. */
+    /** The person dismissed the Google account picker or left the OTP screen. Never an error. */
     CANCELLED,
 
-
-    /** The build is missing Supabase or Google OAuth configuration. */
+    /** The build (or the server project) is missing Firebase, Google or Supabase configuration. */
     UNCONFIGURED,
 
-    /** The ID token was absent, malformed, expired, or issued for the wrong audience. */
+    /** A credential or token was absent, malformed, expired, or issued for the wrong audience. */
     INVALID_TOKEN,
 
-    /** The device could not reach Supabase. */
+    /** The device could not reach Firebase or Supabase. */
     NETWORK,
 
     /** The request did not complete in time. */
     TIMEOUT,
 
-    /** Supabase refused the credentials. */
+    /** Firebase refused the credentials. */
     REJECTED,
 
     /** A uniqueness rule was violated, e.g. the username is already taken. */
@@ -155,7 +146,7 @@ enum class AuthFailureKind {
     /** A required row was missing. */
     NOT_FOUND,
 
-    /** A backend capability is not deployed yet, e.g. the account-deletion function. */
+    /** A backend capability is not deployed yet. */
     UNAVAILABLE,
 
     /** Anything else. Still surfaced, never swallowed. */
@@ -175,6 +166,20 @@ sealed interface AuthResult {
     ) : AuthResult
 }
 
+/** Result of asking Firebase to send or resend a phone verification code. */
+sealed interface PhoneVerificationOutcome {
+    /** The code was sent; the OTP screen must be shown. */
+    data object CodeSent : PhoneVerificationOutcome
+
+    /** Firebase completed verification on its own and the user is now signed in. */
+    data object Completed : PhoneVerificationOutcome
+
+    data class Failure(
+        val message: String,
+        val kind: AuthFailureKind = AuthFailureKind.UNKNOWN,
+    ) : PhoneVerificationOutcome
+}
+
 /** Result of checking whether a username can still be claimed. */
 sealed interface UsernameAvailability {
     data object Available : UsernameAvailability
@@ -184,34 +189,51 @@ sealed interface UsernameAvailability {
     data object Unknown : UsernameAvailability
 }
 
+/**
+ * Application-facing authentication contract.
+ *
+ * The UI never talks to Firebase or Supabase directly; everything goes through this interface so
+ * navigation, error handling and tests stay independent of both SDKs.
+ */
 interface AuthRepository {
     val authState: StateFlow<AuthState>
 
-    /** Restore a stored session once, at start-up, and publish the resulting [AuthState]. */
+    /** Restore the persisted Firebase session once, at start-up, and publish the result. */
     suspend fun initialize()
 
-    /** Re-run session restoration after a [AuthState.RecoverableError]. */
+    /** Re-run session restoration after an [AuthState.RecoverableError]. */
     suspend fun retrySessionRestore()
 
     /**
-     * Exchange a Google ID token for a Supabase session, then provision and load the profile.
+     * Sign in to Firebase with a Google ID token, then load or create the application profile.
      *
-     * @param idToken the OIDC ID token from Credential Manager
-     * @param rawNonce the un-hashed nonce that was hashed into the Credential Manager request
+     * @param idToken the Google OIDC ID token from Credential Manager
      */
-    suspend fun signInWithGoogle(idToken: String, rawNonce: String?): AuthResult
+    suspend fun signInWithGoogle(idToken: String): AuthResult
+
+    /** Ask Firebase to send an OTP to [phoneNumber]. */
+    suspend fun startPhoneVerification(phoneNumber: PhoneNumber): PhoneVerificationOutcome
+
+    /** Re-send the OTP for the challenge that is currently pending. */
+    suspend fun resendPhoneCode(): PhoneVerificationOutcome
+
+    /** Verify the OTP and sign in. */
+    suspend fun submitPhoneCode(code: String): AuthResult
+
+    /** Abandon the pending phone verification, e.g. when the person edits their number. */
+    suspend fun cancelPhoneVerification()
 
     /** Persist onboarding or profile edits and mark onboarding complete. */
     suspend fun saveProfile(fullName: String, username: String?, avatarUrl: String?): AuthResult
 
-    /** Re-read the profile of the signed-in user without touching the session. */
+    /** Re-read the session and profile of the signed-in user. */
     suspend fun refreshAccount(): AuthResult
 
     suspend fun checkUsername(username: String): UsernameAvailability
 
-    /** Revoke the session and clear every local trace of it. */
+    /** Sign out of Firebase and drop every credential the backend could still use. */
     suspend fun signOut(): AuthResult
 
-    /** Delete the Supabase auth user through a trusted server-side endpoint. */
+    /** Delete the Firebase account and the user's profile row. */
     suspend fun deleteAccount(): AuthResult
 }

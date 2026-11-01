@@ -40,3 +40,13 @@ signing.env*
 /keystores/
 /signing/
 /.signing/
+
+# Firebase project configuration is environment-specific (project id, api key, client ids). It is not
+# a secret, but it differs per Firebase project, so it is supplied locally or by CI instead of being
+# committed. The Gradle plugin is applied only when app/google-services.json exists.
+google-services.json
+**/google-services.json
+# A Firebase Admin service-account key is privileged. It must never be committed, and it is never
+# used by the Android app: only server-side tooling may read it.
+*service-account*.json
+*adminsdk*.json

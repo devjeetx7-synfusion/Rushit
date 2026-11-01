@@ -167,7 +167,7 @@ fun ProfileSetupScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 if (mode == ProfileFormMode.ONBOARDING) {
-                    "This is how RushIt will greet you. Everything else comes from your Google account."
+                    "This is how RushIt will greet you. Everything else comes from how you signed in."
                 } else {
                     "Update how your name and username appear across RushIt."
                 },

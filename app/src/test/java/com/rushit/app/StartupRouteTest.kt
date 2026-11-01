@@ -25,8 +25,9 @@ class StartupRouteTest {
     @Test
     fun `a completed account lands on home`() {
         val account = com.rushit.app.data.auth.AuthAccount(
-            id = TestConfig.USER_A,
+            uid = TestConfig.USER_A,
             email = "shopper@example.com",
+            phoneNumber = null,
             provider = com.rushit.app.data.auth.AuthProviderId.GOOGLE,
             memberSinceEpochSeconds = 1_700_000_000L,
             profile = completedProfile(TestConfig.USER_A),
@@ -37,7 +38,7 @@ class StartupRouteTest {
 
     @Test
     fun `an incomplete profile lands on onboarding, never on home`() {
-        val draft = com.rushit.app.data.auth.ProfileOnboarding.draftFor(googleSession(TestConfig.USER_A), null)
+        val draft = com.rushit.app.data.auth.ProfileOnboarding.draftFor(googleIdentity(TestConfig.USER_A), null)
 
         assertEquals("profile-setup", startupRouteFor(AuthState.ProfileIncomplete(draft)))
     }
@@ -60,11 +61,12 @@ class StartupRouteTest {
 
     @Test
     fun `every authentication state has a routing decision`() {
-        val draft = com.rushit.app.data.auth.ProfileOnboarding.draftFor(googleSession(TestConfig.USER_A), null)
+        val draft = com.rushit.app.data.auth.ProfileOnboarding.draftFor(googleIdentity(TestConfig.USER_A), null)
         val account = com.rushit.app.data.auth.AuthAccount(
-            id = TestConfig.USER_A,
+            uid = TestConfig.USER_A,
             email = null,
-            provider = com.rushit.app.data.auth.AuthProviderId.GOOGLE,
+            phoneNumber = "+919876543210",
+            provider = com.rushit.app.data.auth.AuthProviderId.PHONE,
             memberSinceEpochSeconds = null,
             profile = completedProfile(TestConfig.USER_A),
         )

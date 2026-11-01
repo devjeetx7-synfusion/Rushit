@@ -1,274 +1,275 @@
 package com.rushit.app
 
+import com.rushit.app.data.auth.AccessToken
 import com.rushit.app.data.auth.AuthGateway
+import com.rushit.app.data.auth.AuthGatewayException
+import com.rushit.app.data.auth.AuthIdentity
 import com.rushit.app.data.auth.AuthProviderId
-import com.rushit.app.data.auth.DeleteAccountOutcome
-import com.rushit.app.data.auth.SessionRestoreResult
-import com.rushit.app.data.auth.SessionSnapshot
+import com.rushit.app.data.auth.BackendTokenBridge
+import com.rushit.app.data.auth.PhoneChallenge
+import com.rushit.app.data.auth.PhoneChallengeStart
+import com.rushit.app.data.auth.ProfileGateway
 import com.rushit.app.data.model.Profile
-import io.github.jan.supabase.exceptions.BadRequestRestException
-import io.github.jan.supabase.exceptions.NotFoundRestException
-import io.github.jan.supabase.exceptions.RestException
-import io.github.jan.supabase.exceptions.UnauthorizedRestException
-import io.github.jan.supabase.exceptions.UnknownRestException
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.client.request.get
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
-import java.util.Base64
 
-/**
- * An [AuthGateway] that behaves like the Supabase schema and its Row Level Security rules.
- *
- * The important modelling choice is `provisionProfile`: like `ON CONFLICT DO NOTHING`, it never
- * overwrites an existing row. That is what lets the tests prove a returning user keeps their
- * customized name and avatar.
- */
-class FakeAuthGateway : AuthGateway {
-    override var isConfigured: Boolean = true
-
-    val profiles = mutableMapOf<String, Profile>()
-    val settings = mutableSetOf<String>()
-    val activityLog = mutableListOf<ActivityRecord>()
-    val provisionedUsers = mutableListOf<String>()
-    val savedProfiles = mutableListOf<Profile>()
-    val checkedUsernames = mutableListOf<String>()
-
-    var session: SessionSnapshot? = null
-    var restoreResult: SessionRestoreResult = SessionRestoreResult.NoSession
-    var restoreError: Throwable? = null
-    var signInError: Throwable? = null
-    var fetchProfileError: Throwable? = null
-    var saveError: Throwable? = null
-    var saveGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
-    var activityError: Throwable? = null
-    var usernameCheckError: Throwable? = null
-    var deleteError: Throwable? = null
-    var signOutRevokesRemotely: Boolean = true
-    var deleteOutcome: DeleteAccountOutcome = DeleteAccountOutcome.Deleted
-    var takenUsernames: MutableSet<String> = mutableSetOf()
-    var signIns = 0
-    var deleteRequests = 0
-    var signOutRequests = 0
-    var refreshes = 0
-    var refreshSucceeds = true
-
-    data class ActivityRecord(val userId: String, val eventType: String, val metadata: Map<String, String>)
-
-    override suspend fun restoreSession(): SessionRestoreResult {
-        restoreError?.let { throw it }
-        return restoreResult
-    }
-
-    override suspend fun refreshSession(): Boolean {
-        refreshes++
-        return refreshSucceeds
-    }
-
-    override suspend fun signInWithIdToken(
-        provider: AuthProviderId,
-        idToken: String,
-        rawNonce: String?,
-    ): SessionSnapshot {
-        signIns++
-        signInError?.let { throw it }
-        val signedIn = session ?: error("test gateway needs a session to return")
-        return signedIn
-    }
-
-    override suspend fun currentSession(): SessionSnapshot? = session
-
-    override suspend fun signOut(): Boolean {
-        signOutRequests++
-        // Mirrors the real gateway: local state is cleared even when revocation fails.
-        session = null
-        return signOutRevokesRemotely
-    }
-
-    override suspend fun deleteAccount(): DeleteAccountOutcome {
-        deleteRequests++
-        deleteError?.let { throw it }
-        if (deleteOutcome == DeleteAccountOutcome.Deleted) {
-            val userId = session?.userId
-            profiles.remove(userId)
-            settings.remove(userId)
-            session = null
-        }
-        return deleteOutcome
-    }
-
-    override suspend fun fetchProfile(userId: String): Profile? {
-        fetchProfileError?.let { throw it }
-        return profiles[userId]
-    }
-
-    override suspend fun provisionProfile(
-        userId: String,
-        fullName: String?,
-        avatarUrl: String?,
-    ): Profile? {
-        provisionedUsers += userId
-        // ON CONFLICT (id) DO NOTHING — an existing row is returned untouched.
-        return profiles.getOrPut(userId) {
-            Profile(id = userId, fullName = fullName, avatarUrl = avatarUrl, onboardingCompleted = false)
-        }
-    }
-
-    override suspend fun ensureSettings(userId: String) {
-        settings += userId
-    }
-
-    override suspend fun saveProfile(
-        userId: String,
-        fullName: String,
-        username: String?,
-        avatarUrl: String?,
-    ): Profile {
-        saveError?.let { throw it }
-        saveGate?.await()
-        val existing = profiles[userId] ?: Profile(id = userId)
-        val saved = existing.copy(
-            fullName = fullName,
-            username = username,
-            avatarUrl = avatarUrl ?: existing.avatarUrl,
-            onboardingCompleted = true,
-        )
-        profiles[userId] = saved
-        savedProfiles += saved
-        return saved
-    }
-
-    override suspend fun usernameTaken(username: String): Boolean {
-        checkedUsernames += username
-        usernameCheckError?.let { throw it }
-        return username.trim().lowercase() in takenUsernames
-    }
-
-    override suspend fun recordActivity(
-        userId: String,
-        eventType: String,
-        metadata: Map<String, String>,
-    ) {
-        activityError?.let { throw it }
-        activityLog += ActivityRecord(userId, eventType, metadata)
-    }
+/** Shared constants: Firebase UIDs are opaque strings, not UUIDs. */
+object TestConfig {
+    const val USER_A = "firebaseUidUserA0000000000000001"
+    const val USER_B = "firebaseUidUserB0000000000000002"
+    const val WEB_CLIENT_ID = "1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
+    const val TOKEN = "firebase-id-token-for-tests"
 }
 
-/** A session as Supabase would return it after a Google sign-in. */
-fun googleSession(
-    userId: String = "11111111-2222-3333-4444-555555555555",
+fun googleIdentity(
+    uid: String = TestConfig.USER_A,
     email: String? = "shopper@example.com",
-    fullName: String? = "Google Name",
+    fullName: String? = "Rush It",
     username: String? = null,
     avatarUrl: String? = "https://lh3.googleusercontent.com/a/photo",
-    memberSince: Long? = 1_700_000_000L,
-) = SessionSnapshot(
-    userId = userId,
+    phoneNumber: String? = null,
+) = AuthIdentity(
+    uid = uid,
     email = email,
+    phoneNumber = phoneNumber,
     provider = AuthProviderId.GOOGLE,
-    memberSinceEpochSeconds = memberSince,
+    memberSinceEpochSeconds = 1_700_000_000L,
     suggestedFullName = fullName,
     suggestedUsername = username,
     suggestedAvatarUrl = avatarUrl,
 )
 
+fun phoneIdentity(
+    uid: String = TestConfig.USER_B,
+    phoneNumber: String = "+919876543210",
+    fullName: String? = null,
+) = AuthIdentity(
+    uid = uid,
+    // Phone-only accounts have no email; nothing in the app may require one.
+    email = null,
+    phoneNumber = phoneNumber,
+    provider = AuthProviderId.PHONE,
+    memberSinceEpochSeconds = 1_700_000_100L,
+    suggestedFullName = fullName,
+    suggestedUsername = null,
+    suggestedAvatarUrl = null,
+)
+
 fun completedProfile(
-    id: String,
-    fullName: String = "Custom Name",
-    username: String? = "shopper",
-    avatarUrl: String? = "https://example.test/custom.png",
+    firebaseUid: String = TestConfig.USER_A,
+    fullName: String? = "Rush It",
+    username: String? = "rushit",
+    avatarUrl: String? = null,
+    onboardingCompleted: Boolean = true,
 ) = Profile(
-    id = id,
+    id = "internal-uuid-for-$firebaseUid",
+    firebaseUid = firebaseUid,
     fullName = fullName,
     username = username,
     avatarUrl = avatarUrl,
-    onboardingCompleted = true,
-    createdAt = "2026-01-01T00:00:00Z",
-    updatedAt = "2026-01-01T00:00:00Z",
+    onboardingCompleted = onboardingCompleted,
 )
 
 /**
- * Builds an unsigned JWT with the given claims.
+ * An [AuthGateway] that behaves like Firebase Authentication.
  *
- * RushIt only ever reads the payload locally — Supabase and Google verify the signature — so an
- * unsigned token is exactly what the client-side checks see.
+ * Every failure hook throws an [AuthGatewayException], exactly like the real adapter, so the tests
+ * exercise the same classification path the production code uses.
  */
-fun buildIdToken(
-    audience: String = TestConfig.WEB_CLIENT_ID,
-    issuer: String = "https://accounts.google.com",
-    subject: String = "google-subject-1",
-    issuedAt: Long = 1_700_000_000L,
-    expiresAt: Long = 1_700_003_600L,
-    nonce: String? = null,
-    email: String? = "shopper@example.com",
-    name: String? = "Google Name",
-    picture: String? = "https://lh3.googleusercontent.com/a/photo",
-): String {
-    val claims = buildList {
-        add("\"iss\":\"$issuer\"")
-        add("\"aud\":\"$audience\"")
-        add("\"sub\":\"$subject\"")
-        add("\"iat\":$issuedAt")
-        add("\"exp\":$expiresAt")
-        nonce?.let { add("\"nonce\":\"$it\"") }
-        email?.let { add("\"email\":\"$it\"") }
-        name?.let { add("\"name\":\"$it\"") }
-        picture?.let { add("\"picture\":\"$it\"") }
-    }.joinToString(",")
-    val header = encodeSegment("""{"alg":"RS256","typ":"JWT"}""")
-    val payload = encodeSegment("{$claims}")
-    return "$header.$payload.${encodeSegment("signature")}"
-}
+class FakeAuthGateway : AuthGateway {
+    override var isConfigured: Boolean = true
 
-private fun encodeSegment(value: String): String =
-    Base64.getUrlEncoder().withoutPadding().encodeToString(value.toByteArray(Charsets.UTF_8))
+    /** Returned by [awaitInitialIdentity] and [currentIdentity]. */
+    var identity: AuthIdentity? = null
 
-object TestConfig {
-    /** Shaped like a real Web OAuth client ID, but not a real credential. */
-    const val WEB_CLIENT_ID = "000000000000-testwebclientid.apps.googleusercontent.com"
-    const val OTHER_CLIENT_ID = "000000000000-differentclient.apps.googleusercontent.com"
-    const val USER_A = "11111111-2222-3333-4444-555555555555"
-    const val USER_B = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-}
+    var googleError: Throwable? = null
+    var tokenError: Throwable? = null
+    var startPhoneError: Throwable? = null
+    var resendError: Throwable? = null
+    var verifyError: Throwable? = null
+    var signOutError: Throwable? = null
+    var deleteError: Throwable? = null
 
-/**
- * Real supabase-kt REST exceptions need an [io.ktor.client.statement.HttpResponse], whose `message`
- * embeds the request URL and headers. Building them through a mock engine is what lets the tests
- * assert that those internals never reach a user-facing string.
- */
-class RestExceptionFactory {
-    private val client = HttpClient(MockEngine { respond("{}", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+    /** True when Firebase completes phone verification on its own (instant/auto-retrieval). */
+    var autoVerifyOnStart: Boolean = false
 
-    /** The `message` of these exceptions contains request headers, including the apikey and JWT. */
-    private suspend fun response() = client.get("https://example.supabase.co/rest/v1/profiles?select=id") {
-        headers.appendAll(headersOf("apikey", SECRET_ANON_KEY))
-        headers.appendAll(headersOf("Authorization", "Bearer $SECRET_JWT"))
+    var accessToken: AccessToken? = AccessToken(TestConfig.TOKEN, 4_000_000_000L)
+
+    val tokenRequests = mutableListOf<Boolean>()
+    val discardedChallenges = mutableListOf<PhoneChallenge>()
+    var signOutCount = 0
+    var deleteCount = 0
+    var googleSignInCount = 0
+    var startPhoneCount = 0
+    var resendCount = 0
+    var verifyCount = 0
+
+    var lastPhoneNumber: String? = null
+    var lastCode: String? = null
+    private var challengeCounter = 0
+
+    override suspend fun awaitInitialIdentity(): AuthIdentity? = identity
+
+    override suspend fun currentIdentity(): AuthIdentity? = identity
+
+    override suspend fun signInWithGoogleIdToken(idToken: String): AuthIdentity {
+        googleSignInCount++
+        googleError?.let { throw it }
+        return identity ?: googleIdentity()
     }
 
-    suspend fun rowLevelSecurity() = BadRequestRestException(
-        "new row violates row-level security policy for table \"profiles\"",
-        response(),
-        "Failing row contains ...",
-    )
+    override suspend fun startPhoneVerification(phoneNumberE164: String): PhoneChallengeStart {
+        startPhoneCount++
+        lastPhoneNumber = phoneNumberE164
+        startPhoneError?.let { throw it }
+        if (autoVerifyOnStart) {
+            identity = phoneIdentity()
+            return PhoneChallengeStart.AutoVerified
+        }
+        challengeCounter++
+        return PhoneChallengeStart.CodeSent(PhoneChallenge("challenge-$challengeCounter"))
+    }
 
-    suspend fun duplicateKey() = BadRequestRestException(
-        "duplicate key value violates unique constraint \"profiles_username_unique\"",
-        response(),
-        "Key (lower(username))=(rushit) already exists.",
-    )
+    override suspend fun resendPhoneCode(challenge: PhoneChallenge): PhoneChallengeStart {
+        resendCount++
+        resendError?.let { throw it }
+        return PhoneChallengeStart.CodeSent(challenge)
+    }
 
-    suspend fun jwtExpired() = UnknownRestException("JWT expired", response(), "PGRST301")
+    override suspend fun verifyPhoneCode(challenge: PhoneChallenge, code: String): AuthIdentity {
+        verifyCount++
+        lastCode = code
+        verifyError?.let { throw it }
+        return identity ?: phoneIdentity()
+    }
 
-    suspend fun unauthorized() = UnauthorizedRestException("JWT expired", response())
+    override suspend fun discardPhoneChallenge(challenge: PhoneChallenge) {
+        discardedChallenges += challenge
+    }
 
-    suspend fun notFound() = NotFoundRestException("Could not find the function public.delete_user_account", response())
+    override suspend fun accessToken(forceRefresh: Boolean): AccessToken? {
+        tokenRequests += forceRefresh
+        tokenError?.let { throw it }
+        return accessToken
+    }
 
-    fun close() = client.close()
+    override suspend fun signOut() {
+        signOutCount++
+        signOutError?.let { throw it }
+        identity = null
+    }
 
-    companion object {
-        const val SECRET_ANON_KEY = "super-secret-anon-key"
-        const val SECRET_JWT = "super-secret-jwt"
+    override suspend fun deleteAccount() {
+        deleteCount++
+        deleteError?.let { throw it }
+        identity = null
+    }
+}
+
+/** An in-memory stand-in for the Supabase profile tables and their RLS rules. */
+class FakeProfileGateway : ProfileGateway {
+    override var isConfigured: Boolean = true
+
+    val profiles = mutableMapOf<String, Profile>()
+    val settings = mutableSetOf<String>()
+    val activityLog = mutableListOf<Triple<String, String, Map<String, String>>>()
+    val deleted = mutableListOf<String>()
+    val provisioned = mutableListOf<String>()
+    val savedProfiles = mutableListOf<Profile>()
+    var takenUsernames = mutableSetOf<String>()
+
+    var findError: Throwable? = null
+    var provisionError: Throwable? = null
+    var saveError: Throwable? = null
+    var deleteError: Throwable? = null
+    var usernameCheckError: Throwable? = null
+
+    override suspend fun findProfile(firebaseUid: String): Profile? {
+        findError?.let { throw it }
+        return profiles[firebaseUid]
+    }
+
+    override suspend fun provisionProfile(
+        firebaseUid: String,
+        fullName: String?,
+        avatarUrl: String?,
+    ): Profile? {
+        provisionError?.let { throw it }
+        provisioned += firebaseUid
+        // Mirrors `on conflict (firebase_uid) do nothing`: a saved row is never replaced.
+        val existing = profiles[firebaseUid]
+        if (existing != null) return existing
+        val created = Profile(
+            id = "internal-uuid-for-$firebaseUid",
+            firebaseUid = firebaseUid,
+            fullName = fullName,
+            avatarUrl = avatarUrl,
+            onboardingCompleted = false,
+        )
+        profiles[firebaseUid] = created
+        return created
+    }
+
+    override suspend fun ensureSettings(firebaseUid: String) {
+        profiles[firebaseUid] ?: return
+        settings += firebaseUid
+    }
+
+    override suspend fun saveProfile(
+        firebaseUid: String,
+        fullName: String,
+        username: String?,
+        avatarUrl: String?,
+    ): Profile {
+        saveError?.let { throw it }
+        val existing = profiles[firebaseUid]
+            ?: provisionProfile(firebaseUid, fullName, avatarUrl)
+            ?: error("provisioning did not create a row")
+        val saved = existing.copy(
+            fullName = fullName,
+            username = username,
+            avatarUrl = avatarUrl,
+            onboardingCompleted = true,
+        )
+        profiles[firebaseUid] = saved
+        savedProfiles += saved
+        return saved
+    }
+
+    override suspend fun usernameTaken(username: String): Boolean {
+        usernameCheckError?.let { throw it }
+        return username.lowercase() in takenUsernames
+    }
+
+    override suspend fun recordActivity(
+        firebaseUid: String,
+        eventType: String,
+        metadata: Map<String, String>,
+    ) {
+        activityLog += Triple(firebaseUid, eventType, metadata)
+    }
+
+    override suspend fun deleteProfile(firebaseUid: String) {
+        deleteError?.let { throw it }
+        deleted += firebaseUid
+        profiles.remove(firebaseUid)
+    }
+}
+
+/** Records exactly what was handed to the Supabase client, and when it was dropped. */
+class RecordingTokenBridge : BackendTokenBridge {
+    var token: AccessToken? = null
+    var clears = 0
+    val installed = mutableListOf<AccessToken>()
+
+    override val hasToken: Boolean
+        get() = token != null
+
+    override suspend fun use(token: AccessToken) {
+        this.token = token
+        installed += token
+    }
+
+    override suspend fun clear() {
+        clears++
+        token = null
     }
 }

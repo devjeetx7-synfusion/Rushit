@@ -7,6 +7,23 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // Declared here so the plugin can be applied conditionally below. Applying it unconditionally
+    // would fail every build that does not have a google-services.json (CI, contributors, forks).
+    id("com.google.gms.google-services") apply false
+}
+
+// Firebase reads its project configuration from app/google-services.json. That file contains project
+// identifiers rather than secrets, but it is still environment-specific, so it is not committed:
+// supply it locally or from a CI secret. When it is absent the app still builds and runs, reports
+// itself as unconfigured on the login screen, and never pretends to sign anybody in.
+val firebaseConfigured = file("google-services.json").isFile
+if (firebaseConfigured) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn(
+        "RushIt: app/google-services.json is missing, so Firebase Authentication is not configured " +
+            "for this build. Sign-in will report itself as unconfigured at runtime. See docs/AUTH_SETUP.md.",
+    )
 }
 
 val localProperties = Properties().apply {
@@ -35,7 +52,8 @@ listOf(
     "GOOGLE_WEB_CLIENT_ID" to googleWebClientId,
 ).filter { it.second.isBlank() }.forEach { (name, _) ->
     logger.warn(
-        "RushIt: $name is not set, so Google Sign-In will report itself as unconfigured at runtime. " +
+        "RushIt: $name is not set, so sign-in and account data will report themselves as " +
+            "unconfigured at runtime. " +
             "Set it in local.properties, a Gradle property, or the environment. See docs/AUTH_SETUP.md."
     )
 }
@@ -124,6 +142,9 @@ android {
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(googleWebClientId))
+        // Lets the app distinguish "Firebase is configured" from "this build has no
+        // google-services.json", instead of crashing inside FirebaseAuth.getInstance().
+        buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())
     }
     signingConfigs {
         // AGP creates the debug config with the local default identity. Override it only when a
@@ -174,23 +195,25 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:2.5.0"))
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    // Used only for the account-deletion Edge Function; the service-role key stays server-side.
-    implementation("io.github.jan-tennert.supabase:functions-kt")
     implementation("io.ktor:ktor-client-android:2.3.11")
-    // supabase-kt models session expiry with kotlinx.datetime.Instant; pinned to the version the
-    // 2.5.0 BOM was built against so the encrypted SessionManager and the SDK agree.
+    // supabase-kt models the bearer-token expiry with kotlinx.datetime.Instant; pinned to the version
+    // the 2.5.0 BOM was built against so SupabaseIdentityBridge and the SDK agree.
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
+
+    // Firebase Authentication: Google Sign-In and phone OTP. The BoM pins compatible versions of
+    // firebase-auth and its transitive artifacts (common, installations, datatransport, ...).
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    // `Task.await()` for FirebaseUser.getIdToken / signInWithCredential / delete.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 
     // Google Credential Manager sign-in. googleid supplies GetGoogleIdOption and the ID-token
     // credential; credentials-play-services-auth bridges to Google Play services on older devices.
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
-    // Supabase's official Android OAuth redirect flow uses a browser/Custom Tab, never a WebView.
-    implementation("androidx.browser:browser:1.8.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("org.robolectric:robolectric:4.13")
     // Lets the tests build real supabase-kt RestExceptions, whose message embeds request headers.

@@ -1,19 +1,26 @@
 package com.rushit.app
 
+import android.os.Bundle
 import androidx.activity.ComponentActivity
-import com.rushit.app.data.auth.google.GoogleIdRequestSpec
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.rushit.app.data.auth.google.CredentialManagerGoogleSignIn
 import com.rushit.app.data.auth.google.GoogleSignInClient
 import com.rushit.app.data.auth.google.GoogleSignInCoordinator
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
-import com.rushit.app.data.auth.google.SupabaseBrowserSignIn
-import com.rushit.app.data.auth.google.SupabaseOAuthTransport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,123 +28,169 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+/**
+ * The Google sign-in transport and its single-flight owner.
+ *
+ * These tests protect three things: only a Google ID token is ever accepted, a second concurrent tap
+ * cannot open a second picker, and a destroyed Activity never receives a late credential.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GoogleSignInCoordinatorTest {
+
     private val clientId = "1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
-    private val code = "abcdefghijklmnopqrstuvwxyz123456"
-    private val callback = "rushit://auth/callback?code=$code"
-    private val activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
-    private val activity = activityController.get()
+    private val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
 
     @Test
-    fun `unsupported native sign-in falls back to official browser transport`() = runTest {
-        val browser = FakeBrowser()
-        val client = coordinator(browser) { GoogleSignInOutcome.Unsupported }
-        assertEquals(GoogleSignInOutcome.BrowserPending, client.requestGoogleIdToken())
-        assertEquals(1, browser.starts)
-        assertEquals(GoogleSignInOutcome.BrowserSuccess, client.completeBrowserRedirect(callback))
-        assertEquals(listOf(code), browser.exchanged)
-        assertEquals(1, browser.clears)
+    fun `a valid Google ID token comes back as a success`() = runTest {
+        val client = client { success("id-token-value") }
+
+        assertEquals(GoogleSignInOutcome.Success("id-token-value"), client.requestGoogleIdToken())
     }
 
     @Test
-    fun `no native credential after both stages also uses browser fallback`() = runTest {
-        val browser = FakeBrowser()
-        val client = coordinator(browser) { GoogleSignInOutcome.NoCredentialAvailable }
-        assertEquals(GoogleSignInOutcome.BrowserPending, client.requestGoogleIdToken())
-        assertEquals(1, browser.starts)
-    }
-
-    @Test
-    fun `native cancellation never opens a browser`() = runTest {
-        val browser = FakeBrowser()
-        val client = coordinator(browser) { GoogleSignInOutcome.Cancelled }
-        assertEquals(GoogleSignInOutcome.Cancelled, client.requestGoogleIdToken())
-        assertEquals(0, browser.starts)
-    }
-
-    @Test
-    fun `duplicate callback is exchanged only once`() = runTest {
-        val browser = FakeBrowser()
-        val client = coordinator(browser) { GoogleSignInOutcome.Unsupported }
-        client.requestGoogleIdToken()
-        assertEquals(GoogleSignInOutcome.BrowserSuccess, client.completeBrowserRedirect(callback))
-        assertNull(client.completeBrowserRedirect(callback))
-        assertEquals(listOf(code), browser.exchanged)
-    }
-
-    @Test
-    fun `callback without this app's persisted PKCE verifier is rejected`() = runTest {
-        val browser = FakeBrowser().apply { pending = false }
-        val client = coordinator(browser) { GoogleSignInOutcome.Unsupported }
-        val outcome = client.completeBrowserRedirect(callback) as GoogleSignInOutcome.Failed
-        assertEquals(GoogleSignInMessages.BROWSER_EXPIRED, outcome.message)
-        assertTrue(browser.exchanged.isEmpty())
-    }
-
-    @Test
-    fun `returning without a callback cancels and clears the pending verifier`() = runTest {
-        val browser = FakeBrowser()
-        val client = coordinator(browser) { GoogleSignInOutcome.Unsupported }
-        client.requestGoogleIdToken()
-        assertEquals(GoogleSignInOutcome.Cancelled, client.cancelBrowserSignIn())
-        assertEquals(1, browser.clears)
-        assertNull(client.cancelBrowserSignIn())
-        val outcome = client.completeBrowserRedirect(callback) as GoogleSignInOutcome.Failed
-        assertEquals(GoogleSignInMessages.BROWSER_EXPIRED, outcome.message)
-    }
-
-    @Test
-    fun `concurrent sign-in taps have one owner`() = runTest {
-        val gate = CompletableDeferred<GoogleSignInOutcome>()
-        var calls = 0
-        val client = coordinator(FakeBrowser()) { calls++; gate.await() }
-        val first = async { client.requestGoogleIdToken() }
-        runCurrent()
-        val second = client.requestGoogleIdToken() as GoogleSignInOutcome.Failed
-        assertEquals(GoogleSignInMessages.ALREADY_SIGNING_IN, second.message)
-        gate.complete(GoogleSignInOutcome.Cancelled)
-        assertEquals(GoogleSignInOutcome.Cancelled, first.await())
-        assertEquals(1, calls)
-    }
-
-    @Test
-    fun `unconfigured Supabase never launches browser OAuth`() = runTest {
-        val browser = FakeBrowser()
-        val client = GoogleSignInCoordinator(
-            nativeSignIn = fakeNative { GoogleSignInOutcome.Unsupported },
-            browserSignIn = SupabaseBrowserSignIn({ null }, browser),
-            browserTransport = browser, browserConfigured = false,
-        )
-        assertEquals(GoogleSignInOutcome.Failed(GoogleSignInMessages.PLAY_SERVICES), client.requestGoogleIdToken())
-        assertEquals(0, browser.starts)
-    }
-
-    private fun coordinator(browser: FakeBrowser, native: suspend (GoogleIdRequestSpec) -> GoogleSignInOutcome) =
-        GoogleSignInCoordinator(
-            nativeSignIn = fakeNative(native),
-            browserSignIn = SupabaseBrowserSignIn({ activity }, browser) { _, _ -> },
-            browserTransport = browser, browserConfigured = true,
-        )
-
-    private fun fakeNative(request: suspend (GoogleIdRequestSpec) -> GoogleSignInOutcome) = object : GoogleSignInClient {
-        override suspend fun requestGoogleIdToken() = request(GoogleIdRequestSpec(clientId, "hash", true))
-    }
-
-    private class FakeBrowser : SupabaseOAuthTransport {
-        var starts = 0
-        var pending = false
-        var clears = 0
-        val exchanged = mutableListOf<String>()
-        override suspend fun authorizationUrl(): String {
-            starts++
-            pending = true
-            return "https://project.supabase.co/auth/v1/authorize?provider=google"
+    fun `the request targets the web client and asks for authorized accounts first`() = runTest {
+        val requests = mutableListOf<GetCredentialRequest>()
+        val client = client { request ->
+            requests += request
+            success("id-token-value")
         }
-        override suspend fun hasPendingCode() = pending
-        override suspend fun exchange(code: String) { exchanged += code; pending = false }
-        override suspend fun clearPendingCode() { clears++; pending = false }
+
+        client.requestGoogleIdToken()
+
+        val option = requests.single().credentialOptions.filterIsInstance<GetGoogleIdOption>().single()
+        assertEquals(clientId, option.serverClientId)
+        assertTrue(option.filterByAuthorizedAccounts)
     }
+
+    @Test
+    fun `a blank web client id never opens a picker`() = runTest {
+        var called = false
+        val client = CredentialManagerGoogleSignIn({ activity }, " ") { _, _ ->
+            called = true
+            success("unused")
+        }
+
+        assertEquals(GoogleSignInOutcome.Unconfigured, client.requestGoogleIdToken())
+        assertFalse(called)
+    }
+
+    @Test
+    fun `no resumed host is a retryable failure, not a sign-in`() = runTest {
+        var called = false
+        val client = CredentialManagerGoogleSignIn({ null }, clientId) { _, _ ->
+            called = true
+            success("unused")
+        }
+
+        val outcome = client.requestGoogleIdToken() as GoogleSignInOutcome.Failed
+        assertEquals(GoogleSignInMessages.NO_ACTIVITY, outcome.message)
+        assertFalse(outcome.offline)
+        assertFalse(called)
+    }
+
+    @Test
+    fun `a credential that arrives after the host is gone is discarded`() = runTest {
+        var current: ComponentActivity? = activity
+        val client = CredentialManagerGoogleSignIn({ current }, clientId) { _, _ ->
+            // Simulate the Activity being destroyed while the picker result was in flight.
+            current = null
+            success("late-token")
+        }
+
+        val outcome = client.requestGoogleIdToken() as GoogleSignInOutcome.Failed
+        assertEquals(GoogleSignInMessages.NO_ACTIVITY, outcome.message)
+    }
+
+    @Test
+    fun `a non-Google credential type is never trusted`() = runTest {
+        val client = client {
+            GetCredentialResponse(CustomCredential("some.other.credential", Bundle()))
+        }
+
+        val outcome = client.requestGoogleIdToken() as GoogleSignInOutcome.Failed
+        assertEquals(GoogleSignInMessages.UNEXPECTED_CREDENTIAL, outcome.message)
+    }
+
+    @Test
+    fun `dismissing the picker is a cancellation`() = runTest {
+        val client = client { throw GetCredentialCancellationException() }
+
+        assertEquals(GoogleSignInOutcome.Cancelled, client.requestGoogleIdToken())
+    }
+
+    @Test
+    fun `a second concurrent tap is refused instead of opening a second picker`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var nativeCalls = 0
+        val coordinator = GoogleSignInCoordinator(object : GoogleSignInClient {
+            override suspend fun requestGoogleIdToken(): GoogleSignInOutcome {
+                nativeCalls++
+                gate.await()
+                return GoogleSignInOutcome.Success("token")
+            }
+        })
+
+        val first = async { coordinator.requestGoogleIdToken() }
+        runCurrent()
+        val second = coordinator.requestGoogleIdToken()
+
+        assertEquals(
+            GoogleSignInOutcome.Failed(GoogleSignInMessages.ALREADY_SIGNING_IN),
+            second,
+        )
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(GoogleSignInOutcome.Success("token"), first.await())
+        assertEquals(1, nativeCalls)
+    }
+
+    @Test
+    fun `the in-flight lock is released even when the transport throws`() = runTest {
+        var calls = 0
+        val coordinator = GoogleSignInCoordinator(object : GoogleSignInClient {
+            override suspend fun requestGoogleIdToken(): GoogleSignInOutcome {
+                calls++
+                if (calls == 1) throw IllegalStateException("transport exploded")
+                return GoogleSignInOutcome.Success("second-attempt")
+            }
+        })
+
+        val first = coordinator.requestGoogleIdToken()
+        assertEquals(GoogleSignInOutcome.Failed(GoogleSignInMessages.UNKNOWN), first)
+        // No stale flag: the next attempt actually runs.
+        assertEquals(GoogleSignInOutcome.Success("second-attempt"), coordinator.requestGoogleIdToken())
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `a coroutine cancellation is not converted into a user-facing error`() = runTest {
+        val coordinator = GoogleSignInCoordinator(object : GoogleSignInClient {
+            override suspend fun requestGoogleIdToken(): GoogleSignInOutcome = throw CancellationException("gone")
+        })
+
+        var propagated = false
+        try {
+            coordinator.requestGoogleIdToken()
+        } catch (expected: CancellationException) {
+            propagated = true
+        }
+        assertTrue(propagated)
+    }
+
+    private fun client(
+        respond: suspend (GetCredentialRequest) -> GetCredentialResponse,
+    ): CredentialManagerGoogleSignIn =
+        CredentialManagerGoogleSignIn({ activity }, clientId) { _, request -> respond(request) }
+
+    private fun success(token: String) = GetCredentialResponse(
+        CustomCredential(
+            type = GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL,
+            data = Bundle().apply {
+                putString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID", "google-subject")
+                putString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID_TOKEN", token)
+            },
+        ),
+    )
 }
