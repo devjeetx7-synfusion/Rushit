@@ -55,7 +55,7 @@ fun HelpScreen(onBack: () -> Unit) {
         "Are orders real?" to "Checkout creates a demo order stored on this device. No payment, rider or real delivery is involved.",
         "How do I track an order?" to "Open Orders and select a demo order. The preview controls change only its local simulated status; there is no live GPS.",
         "Can I get a refund?" to "Demo checkout does not charge a payment. Payment and refund services are not configured in this build.",
-        "How do I sign in?" to "Phone sign-in requires the app administrator to configure Supabase Auth and an SMS provider. You can browse the sample store without signing in.",
+        "How do I sign in?" to "Sign in using your mobile number with a Firebase SMS verification code, or tap Continue with Google.",
         "Where can I get support?" to "No support contact or live support integration has been configured for this build."
     )
     var expanded by rememberSaveable { mutableStateOf(-1) }

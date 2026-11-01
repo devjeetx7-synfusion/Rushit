@@ -54,7 +54,7 @@ import com.rushit.app.ui.components.RushBottomBar
 import com.rushit.app.ui.components.mainDestinations
 import com.rushit.app.ui.screens.home.HomeScreen
 import com.rushit.app.ui.screens.login.LoginScreen
-import com.rushit.app.ui.screens.login.PhoneLoginScreen
+import com.rushit.app.ui.screens.login.OtpVerificationScreen
 
 import com.rushit.app.ui.screens.splash.SplashScreen
 import com.rushit.app.ui.screens.store.HelpScreen
@@ -125,6 +125,14 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
 
     // A placed order is only announced after the repository stored it.
     val placedOrderId = orderState.order?.id?.takeIf { orderState.justPlaced }
+
+    // Navigate to OTP verification when code is sent from inline phone input.
+    LaunchedEffect(phoneUi.codeSent) {
+        if (phoneUi.codeSent && nav.currentDestination?.route != "otp-verification") {
+            nav.navigate("otp-verification") { launchSingleTop = true }
+        }
+    }
+
     LaunchedEffect(placedOrderId) {
         val id = placedOrderId ?: return@LaunchedEffect
         if (!orders.consumePlacement(id)) return@LaunchedEffect
@@ -200,30 +208,30 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                         if (!needsStartupRoute) LoginScreen(
                             authState = authState,
                             uiState = authUi,
+                            phoneUiState = phoneUi,
                             errorMessage = authError,
                             recoveryAction = recoveryAction,
                             onGoogleSignIn = auth::initiateGoogleSignIn,
-                            onPhoneSignIn = {
-                                nav.navigate("phone-login") { launchSingleTop = true }
+                            onSendCode = { country, number ->
+                                auth.startPhoneVerification(country, number)
                             },
                             onRetry = auth::retrySession,
                             onClearError = auth::clearError,
                         )
                     }
-                    // Phone OTP sign-in. Reached only from the login screen, and always leaves a
-                    // working back path so a person can switch to Google without signing in.
-                    composable("phone-login") {
-                        if (!needsStartupRoute) PhoneLoginScreen(
+                    // OTP Verification screen. Reached directly from welcome screen when OTP is sent.
+                    composable("otp-verification") {
+                        if (!needsStartupRoute) OtpVerificationScreen(
+                            maskedPhoneNumber = phoneUi.maskedPhoneNumber,
                             uiState = phoneUi,
                             errorMessage = authError,
-                            onSendCode = auth::startPhoneVerification,
-                            onResendCode = auth::resendPhoneCode,
-                            onVerifyCode = auth::submitPhoneCode,
-                            onChangeNumber = auth::changePhoneNumber,
-                            onBack = { nav.popBackStack() },
+                            onVerify = auth::submitPhoneCode,
+                            onResend = auth::resendPhoneCode,
+                            onChangeNumber = {
+                                auth.changePhoneNumber()
+                                nav.popBackStack()
+                            },
                             onClearError = auth::clearError,
-                            onGoogleSignIn = auth::initiateGoogleSignIn,
-                            googleLoading = authUi.signingIn,
                         )
                     }
                     // Onboarding is the only entry on the back stack, so the system back button
