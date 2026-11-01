@@ -27,7 +27,7 @@ class SupabaseOAuthRedirectTest {
 
     @Test
     fun `unrelated links are ignored`() {
-        for (uri in listOf(null, "", "https://example.com", "rushit://auth/other?code=$code", "rushit://other/callback?code=$code")) {
+        for (uri in listOf(null, "", "not a uri", "https://example.com", "rushit://auth/other?code=$code", "rushit://other/callback?code=$code")) {
             assertEquals(SupabaseOAuthRedirect.Result.Ignored, SupabaseOAuthRedirect.parse(uri))
         }
     }
@@ -45,7 +45,7 @@ class SupabaseOAuthRedirectTest {
             "rushit://auth/callback?code=short",
             "rushit://auth/callback?code=$code&error=server_error",
             "rushit://auth/callback",
-            "not a uri",
+            "rushit://auth/callback?code=%zz",
         )) {
             assertTrue(uri, SupabaseOAuthRedirect.parse(uri) is SupabaseOAuthRedirect.Result.Rejected)
         }

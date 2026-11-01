@@ -23,6 +23,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GoogleSignInCoordinatorTest {
     private val clientId = "1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
     private val code = "abcdefghijklmnopqrstuvwxyz123456"

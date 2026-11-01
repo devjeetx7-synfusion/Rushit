@@ -85,12 +85,9 @@ internal class GoogleSignInCoordinator internal constructor(
                 }
                 is SupabaseOAuthRedirect.Result.Code -> {
                     lastConsumedCodeHash = SignInNonce.sha256Hex(callback.value)
-                    try {
-                        browserSignIn.exchange(callback.value)
-                    } finally {
-                        // Codes are single-use. Failed exchanges require a fresh browser attempt.
-                        browserTransport.clearPendingCode()
-                    }
+                    // The browser transport clears the verifier after both successful and failed
+                    // exchanges. A failed exchange requires a fresh browser attempt.
+                    browserSignIn.exchange(callback.value)
                 }
                 SupabaseOAuthRedirect.Result.Ignored -> null
             }
