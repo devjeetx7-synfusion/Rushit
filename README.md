@@ -247,22 +247,28 @@ stay separate. Linking a legacy Supabase-Auth row to a Firebase account is a del
 
 ## Verification and current limitations
 
-- **The sign-in UI pass (2026-11-01) has not been compiled or run either.** The login card was
-  reordered (phone primary, Google secondary), the phone flow was split into a number step and a
+- **The sign-in UI pass (2026-11-01) is compiled and tested by CI, not on a device.** The login card
+  was reordered (phone primary, Google secondary), the phone flow was split into a number step and a
   six-box OTP step with a `mm:ss` resend timer, a shared policy footer was extracted, and
-  `VerificationCodeTest` plus new `PhoneNumbersTest`/`AuthViewModelTest` cases were added. No JDK,
-  Android SDK or Gradle distribution exists in that environment, so `./gradlew` was not executed and
-  no Kotlin or Gradle-DSL compilation, unit test, lint run or APK was produced. Treat the new tests
-  as written-not-run and the new layouts as reviewed-not-rendered until CI runs them.
-- **The Firebase Authentication migration has not been compiled or run.** This change was prepared in
-  an environment without a JDK, Android SDK or Gradle distribution, so `./gradlew` could not be
-  executed and no unit test, APK, Gradle configuration or Kotlin compilation was observed. What was
-  done instead: the code was reviewed against the installed SDK versions, the version numbers were
-  checked against the published Maven metadata, and the Firebase/Supabase integration was checked
-  against the current Supabase documentation. Nothing about this migration may be described as
-  verified until `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` passes in a
-  configured environment and the backend steps in `docs/AUTH_SETUP.md` are completed. The exact
-  remaining manual steps are listed in `docs/AUTH_MIGRATION_REPORT.md`.
+  `VerificationCodeTest` plus new `PhoneNumbersTest`/`AuthViewModelTest` cases were added. The
+  authoring sandbox had no JDK, Android SDK or Gradle distribution, so `./gradlew` was not run there.
+  GitHub Actions [run 41324448696](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41324448696)
+  then ran `./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain`:
+  **193 unit tests, 0 failures, 0 errors, 0 skipped**, `:app:assembleDebug` succeeded, and the
+  resulting `com.rushit.app` debug APK (versionCode 44) passed the package/versionCode,
+  packaged-configuration and `apksigner` signature checks. That proves compilation and the tested
+  logic only: no screen was rendered on an emulator or device, and no real OTP or Google account was
+  used (CI supplies no `GOOGLE_SERVICES_JSON` secret, so the build used only the
+  `app/google-services.json` already in the checkout, and no OTP or Google account was entered
+  anywhere). Layout, keyboard, font-scale, landscape and TalkBack behaviour of the new screens
+  remain unverified.
+- **The Firebase Authentication migration was authored without a build, and is now compiled by the
+  CI run above.** The migration itself was prepared in an environment without a JDK, Android SDK or
+  Gradle distribution, so no unit test, APK, Gradle configuration or Kotlin compilation was observed
+  while it was written; the follow-up UI pass had the whole tree compiled and its 193 unit tests
+  executed by GitHub Actions. Lint has **not** been run, and the backend steps in
+  `docs/AUTH_SETUP.md` (Firebase console, Supabase third-party auth, the migration) are still
+  outstanding. The exact remaining manual steps are listed in `docs/AUTH_MIGRATION_REPORT.md`.
 - **Superseded history:** the run below predates the Firebase migration. It proves that the *previous*
   Google/Supabase-Auth build compiled, passed 197 unit tests and produced a signed APK; its
   OAuth-fallback and exact `rushit://auth/callback` intent-filter checks no longer describe the app,
