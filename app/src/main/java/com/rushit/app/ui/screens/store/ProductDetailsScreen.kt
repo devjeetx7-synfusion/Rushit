@@ -67,8 +67,22 @@ fun ProductDetailsScreen(
         }
     }
 
+    val isWishlisted = product != null && product.id in state.wishlist
     Column(Modifier.fillMaxSize().background(Cream)) {
-        ScreenHeader("Product details", onBack)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            RoundIconButton(R.drawable.ic_arrow_left_01, "Go back", onBack, background = Peach)
+            Spacer(Modifier.width(12.dp))
+            Text("Product details", style = MaterialTheme.typography.titleLarge, color = Ink, modifier = Modifier.weight(1f))
+            if (product != null) {
+                RoundIconButton(
+                    icon = if (isWishlisted) R.drawable.ic_heart_filled else R.drawable.ic_heart,
+                    description = if (isWishlisted) "Remove from wishlist" else "Add to wishlist",
+                    onClick = { onWishlist(product.id) },
+                    background = Peach,
+                    tint = Coral,
+                )
+            }
+        }
         if (state.loading) {
             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Coral) }
         } else if (state.error != null) {
@@ -83,10 +97,6 @@ fun ProductDetailsScreen(
             val isAvailable = !product.previewOnly && product.isAvailable && (currentStock == null || currentStock > 0)
             val quantity = state.quantityFor(product, selectedVariantId)
             
-            // Media filter
-            val variantMedia = product.media.filter { it.variantId == null || it.variantId == selectedVariantId }
-            val mainMedia = variantMedia.find { it.id == selectedMediaId } ?: variantMedia.firstOrNull()
-
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                 SwipeableProductMediaGallery(product.media.ifEmpty { listOf(com.rushit.app.data.model.ProductMedia("1", product.imageUrl, product.imageRes)) }, product.name)
 

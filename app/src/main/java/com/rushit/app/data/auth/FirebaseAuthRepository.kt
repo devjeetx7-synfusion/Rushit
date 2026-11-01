@@ -161,9 +161,10 @@ class FirebaseAuthRepository(
     override suspend fun submitPhoneCode(code: String): AuthResult = mutex.withLock {
         val pending = pendingPhone
             ?: return@withLock AuthResult.Failure(Messages.CODE_NOT_REQUESTED, AuthFailureKind.REJECTED)
+        val trimmedCode = code.trim()
         _authState.value = AuthState.Authenticating
         try {
-            val identity = auth.verifyPhoneCode(pending.challenge, code)
+            val identity = auth.verifyPhoneCode(pending.challenge, trimmedCode)
             pendingPhone = null
             completeSignIn(identity)
         } catch (error: Throwable) {

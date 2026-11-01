@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -75,6 +76,7 @@ class GoogleSignInCoordinatorTest {
         assertFalse(called)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `no resumed host is a retryable failure, not a sign-in`() = runTest {
         var called = false
@@ -119,6 +121,7 @@ class GoogleSignInCoordinatorTest {
         assertEquals(GoogleSignInOutcome.Cancelled, client.requestGoogleIdToken())
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `a second concurrent tap is refused instead of opening a second picker`() = runTest {
         val gate = CompletableDeferred<Unit>()
@@ -146,6 +149,7 @@ class GoogleSignInCoordinatorTest {
         assertEquals(1, nativeCalls)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `the in-flight lock is released even when the transport throws`() = runTest {
         var calls = 0

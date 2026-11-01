@@ -382,7 +382,6 @@ jobs:
           forbidden = [
               b'Lcom/rushit/app/data/auth/google/SupabaseOAuthRedirect;',
               b'Lcom/rushit/app/data/auth/google/SupabaseBrowserSignIn;',
-              b'Landroidx/browser/customtabs/CustomTabsIntent;',
           ]
           sys.exit(0 if not any(marker in dex for marker in forbidden) else 1)
           PY

@@ -410,7 +410,7 @@ fun SalesAnalyticsCard(
             }
 
             val compactChart = LocalAdminWindow.current.isCompactHeight
-            val plotHeight = if (compactChart) 104.dp else 148.dp
+            val chartBoxHeight = if (compactChart) 104.dp else 148.dp
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier
@@ -422,7 +422,7 @@ fun SalesAnalyticsCard(
                 Column(
                     modifier = Modifier
                         .width(44.dp)
-                        .height(plotHeight),
+                        .height(chartBoxHeight),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.End,
                 ) {
@@ -447,7 +447,7 @@ fun SalesAnalyticsCard(
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(plotHeight)
+                            .height(chartBoxHeight)
                             .semantics { contentDescription = chartDescription }
                             .pointerInput(activePoints) {
                                 detectTapGestures { offset ->
@@ -481,12 +481,12 @@ fun SalesAnalyticsCard(
                         val h = size.height
                         val topPad = 12.dp.toPx()
                         val bottomPad = 10.dp.toPx()
-                        val plotHeight = (h - topPad - bottomPad).coerceAtLeast(10f)
+                        val innerPlotHeight = (h - topPad - bottomPad).coerceAtLeast(10f)
 
                         // Draw horizontal grid lines
                         val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                         for (i in 0..3) {
-                            val y = topPad + (plotHeight * i / 3f)
+                            val y = topPad + (innerPlotHeight * i / 3f)
                             drawLine(
                                 color = AdminColorScheme.divider,
                                 start = Offset(0f, y),
@@ -503,7 +503,7 @@ fun SalesAnalyticsCard(
                                 w / 2f
                             }
                             val fraction = (pt.amountRupees.toFloat() / niceMax.toFloat()).coerceIn(0f, 1f)
-                            val y = topPad + plotHeight * (1f - fraction)
+                            val y = topPad + innerPlotHeight * (1f - fraction)
                             Offset(x, y)
                         }
 
@@ -525,8 +525,8 @@ fun SalesAnalyticsCard(
 
                             val areaPath = Path().apply {
                                 addPath(linePath)
-                                lineTo(coordinates.last().x, topPad + plotHeight)
-                                lineTo(coordinates.first().x, topPad + plotHeight)
+                                lineTo(coordinates.last().x, topPad + innerPlotHeight)
+                                lineTo(coordinates.first().x, topPad + innerPlotHeight)
                                 close()
                             }
 
@@ -539,7 +539,7 @@ fun SalesAnalyticsCard(
                                         brandColor.copy(alpha = 0.03f),
                                     ),
                                     startY = topPad,
-                                    endY = topPad + plotHeight,
+                                    endY = topPad + innerPlotHeight,
                                 ),
                             )
 
@@ -560,7 +560,7 @@ fun SalesAnalyticsCard(
                                 drawLine(
                                     color = brandColor.copy(alpha = 0.45f),
                                     start = Offset(selectedOffset.x, topPad),
-                                    end = Offset(selectedOffset.x, topPad + plotHeight),
+                                    end = Offset(selectedOffset.x, topPad + innerPlotHeight),
                                     strokeWidth = 1.5.dp.toPx(),
                                     pathEffect = dashEffect,
                                 )

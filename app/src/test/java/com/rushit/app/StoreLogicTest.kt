@@ -113,18 +113,16 @@ class StoreLogicTest {
             Category("e_home", "Home & Living", sortOrder = 0, mode = ShoppingMode.ECOMMERCE) +
             Category("g_bouquets", "Bouquets", sortOrder = 0, mode = ShoppingMode.GIFTS)
         var selected: String? = "produce"
-        var mode = ShoppingMode.GROCERY
         listOf(
             ShoppingMode.ECOMMERCE, ShoppingMode.GIFTS, ShoppingMode.GROCERY,
             ShoppingMode.ECOMMERCE, ShoppingMode.ECOMMERCE, ShoppingMode.GIFTS,
         ).forEach { next ->
             selected = resolveCategorySelection(allCategories, next, selected)
-            mode = next
             assertTrue(
-                "selection $selected is not valid for $mode",
-                selected == null || allCategories.any { it.id == selected && it.mode == mode },
+                "selection $selected is not valid for $next",
+                selected == null || allCategories.any { it.id == selected && it.mode == next },
             )
-            assertEquals("re-resolving the same selection must be idempotent", selected, resolveCategorySelection(allCategories, mode, selected))
+            assertEquals("re-resolving the same selection must be idempotent", selected, resolveCategorySelection(allCategories, next, selected))
         }
     }
 
