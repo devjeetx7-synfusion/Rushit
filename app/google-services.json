@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "67852529090",
+    "project_id": "pixoraprompt",
+    "storage_bucket": "pixoraprompt.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:67852529090:android:8f10f4e7171dc286c17a5b",
+        "android_client_info": {
+          "package_name": "com.rushit.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "67852529090-1lgv2pist15oinavf7rqt6tiov59f0pu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtWTiwCiPhaWY0y7PUWcsW_XNqxalxamk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "67852529090-1lgv2pist15oinavf7rqt6tiov59f0pu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
