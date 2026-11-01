@@ -17,6 +17,9 @@ plugins {
 // supply it locally or from a CI secret. When it is absent the app still builds and runs, reports
 // itself as unconfigured on the login screen, and never pretends to sign anybody in.
 val firebaseConfigured = file("google-services.json").isFile
+// Single source of truth for the installed application id: the manifest, the Firebase registration
+// lookup below and the Gradle plugin all have to agree on it.
+val rushItApplicationId = "com.rushit.app"
 if (firebaseConfigured) {
     apply(plugin = "com.google.gms.google-services")
 } else {
@@ -41,7 +44,31 @@ val supabaseUrl = setting("SUPABASE_URL").trim()
 val supabaseKey = setting("SUPABASE_ANON_KEY").trim()
 // The Web OAuth client ID is the ID-token audience. The Android OAuth client is matched by Google
 // from the package name plus the signing fingerprint, so it is never needed in this file.
-val googleWebClientId = setting("GOOGLE_WEB_CLIENT_ID").trim()
+//
+// An explicit GOOGLE_WEB_CLIENT_ID always wins. When it is absent, the Web client that Firebase
+// recorded for this application in google-services.json is used instead: it is the same public value
+// the plugin already reads, so a build with only the Firebase config file can still sign in with
+// Google instead of claiming the feature is unavailable.
+val firebaseWebClientId: String = if (!firebaseConfigured) "" else runCatching {
+    val root = JsonSlurper().parseText(file("google-services.json").readText())
+    val clients = (root as? Map<*, *>)?.get("client") as? List<*> ?: return@runCatching ""
+    clients.filterIsInstance<Map<*, *>>().firstNotNullOfOrNull { client ->
+        val info = client["client_info"] as? Map<*, *> ?: return@firstNotNullOfOrNull null
+        val packageName = (info["android_client_info"] as? Map<*, *>)?.get("package_name")
+        if (packageName != rushItApplicationId) return@firstNotNullOfOrNull null
+        (client["oauth_client"] as? List<*>).orEmpty()
+            .filterIsInstance<Map<*, *>>()
+            .firstOrNull { (it["client_type"] as? Number)?.toInt() == 3 }
+            ?.get("client_id") as? String
+    }.orEmpty()
+}.getOrDefault("")
+val googleWebClientId = setting("GOOGLE_WEB_CLIENT_ID").trim().ifBlank { firebaseWebClientId }
+if (firebaseWebClientId.isNotBlank() && setting("GOOGLE_WEB_CLIENT_ID").isBlank()) {
+    logger.lifecycle(
+        "RushIt: GOOGLE_WEB_CLIENT_ID is not set; using the Web OAuth client Firebase registered " +
+            "for $rushItApplicationId in app/google-services.json.",
+    )
+}
 // A client secret has no business being in an APK: Credential Manager only needs the public client ID.
 require(setting("GOOGLE_CLIENT_SECRET").isBlank()) {
     "Never bundle a Google OAuth client secret in the app. Only GOOGLE_WEB_CLIENT_ID is required."
@@ -130,7 +157,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.rushit.app"
+        applicationId = rushItApplicationId
         minSdk = 24
         targetSdk = 34
         versionCode = ciVersionCode

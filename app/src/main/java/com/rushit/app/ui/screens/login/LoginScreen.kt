@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -40,7 +39,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -49,11 +47,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.rushit.app.BuildConfig
 import com.rushit.app.R
 import com.rushit.app.data.auth.AuthState
 import com.rushit.app.data.auth.RecoveryAction
 import com.rushit.app.ui.components.GoogleSignInButton
+import com.rushit.app.ui.components.RushButton
 import com.rushit.app.ui.components.RushIcon
 import com.rushit.app.ui.components.RushWordmark
 import com.rushit.app.ui.theme.Border
@@ -66,16 +64,15 @@ import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.SoftRed
 import com.rushit.app.ui.viewmodel.AuthUiState
-import java.net.URI
 
 /**
  * RushIt's sign-in screen.
  *
- * Two Firebase Authentication methods are offered — Google and a phone one-time code — so there is no
- * guest or sample-store shortcut: every shopping screen sits behind a real account. The screen keeps
- * the RushIt wordmark, the delivery rider, the cream and coral palette and the policy links.
+ * Two Firebase Authentication methods are offered — a phone one-time code (the primary action) and
+ * Google — so there is no guest or sample-store shortcut: every shopping screen sits behind a real
+ * account. The screen keeps the RushIt wordmark, the delivery rider, the cream and coral palette and
+ * the policy links.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
     authState: AuthState,
@@ -89,7 +86,6 @@ fun LoginScreen(
 ) {
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogTitle by rememberSaveable { mutableStateOf("How can we help?") }
-    val uriHandler = LocalUriHandler.current
     val largeText = LocalConfiguration.current.fontScale > 1.2f
     val compactWidth = LocalConfiguration.current.screenWidthDp < 360
 
@@ -98,27 +94,11 @@ fun LoginScreen(
         authState == AuthState.Authenticating ||
         authState == AuthState.Loading
 
-    fun openPolicy(url: String, title: String) {
-        dialogTitle = title
-        val valid = runCatching { URI(url).let { it.scheme == "https" && !it.host.isNullOrBlank() } }
-            .getOrDefault(false)
-        dialog = if (!valid) {
-            "$title is not configured in this build. Please contact the RushIt team for the current policy."
-        } else {
-            try {
-                uriHandler.openUri(url)
-                null
-            } catch (error: Exception) {
-                "Couldn't open $title. Check that a browser is installed and try again."
-            }
-        }
-    }
-
     fun openHelp() {
         dialogTitle = "How can we help?"
-        dialog = "Sign in with your Google account to shop, place orders and track deliveries. " +
-            "Your Google password is never asked for or stored, and you can delete your RushIt " +
-            "account at any time from Account settings."
+        dialog = "Sign in with your phone number or your Google account to shop, place orders and " +
+            "track deliveries. RushIt never sees your Google password or the SMS code, and you can " +
+            "delete your RushIt account at any time from Account settings."
     }
 
     BoxWithConstraints(
@@ -227,13 +207,21 @@ fun LoginScreen(
                             Spacer(Modifier.height(14.dp))
                         }
 
+                        // Phone OTP is the primary action: it is the only method that works on a
+                        // device without a Google account, so it gets the RushIt red button.
+                        RushButton(
+                            text = "Continue with phone number",
+                            onClick = onPhoneSignIn,
+                            enabled = !isBusy,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        OrDivider()
+                        Spacer(Modifier.height(16.dp))
                         GoogleSignInButton(
                             onClick = onGoogleSignIn,
                             enabled = !isBusy,
                             loading = uiState.signingIn,
                         )
-                        Spacer(Modifier.height(10.dp))
-                        PhoneSignInButton(onClick = onPhoneSignIn, enabled = !isBusy)
 
                         if (recoveryAction == RecoveryAction.RETRY_SESSION) {
                             Spacer(Modifier.height(10.dp))
@@ -249,56 +237,7 @@ fun LoginScreen(
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    RushIcon(
-                        R.drawable.ic_lock_keyhole,
-                        null,
-                        Modifier
-                            .padding(top = 2.dp)
-                            .size(19.dp),
-                        Muted,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FlowRow(
-                        Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text(
-                            "By continuing, you agree to our",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Muted,
-                        )
-                        Text(
-                            "Terms of Service",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = DeepRed,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable(role = Role.Button) {
-                                    openPolicy(BuildConfig.TERMS_URL, "Terms of Service")
-                                },
-                        )
-                        Text("and", style = MaterialTheme.typography.bodySmall, color = Muted)
-                        Text(
-                            "Privacy Policy.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = DeepRed,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable(role = Role.Button) {
-                                    openPolicy(BuildConfig.PRIVACY_URL, "Privacy Policy")
-                                },
-                        )
-                    }
-                }
+                AuthPolicyFooter()
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -315,41 +254,17 @@ fun LoginScreen(
     }
 }
 
-/**
- * Secondary sign-in entry point.
- *
- * Deliberately quieter than the Google button: Google stays the primary action, and a phone sign-in
- * is one tap away without competing with it.
- */
+/** The quiet "or" rule between the primary phone action and the Google alternative. */
 @Composable
-private fun PhoneSignInButton(onClick: () -> Unit, enabled: Boolean = true) {
-    val active = enabled
-    Surface(
-        onClick = onClick,
-        enabled = active,
-        shape = CircleShape,
-        color = Cream,
-        contentColor = DeepRed,
-        border = BorderStroke(1.dp, if (active) Coral.copy(alpha = .55f) else Border.copy(alpha = .5f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .alpha(if (active) 1f else .62f),
+internal fun OrDivider(modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            Modifier.padding(horizontal = 20.dp, vertical = 15.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                "Continue with phone number",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = DeepRed,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-            )
-        }
+        HorizontalDivider(Modifier.weight(1f), color = Border.copy(alpha = .8f))
+        Text("or", style = MaterialTheme.typography.bodySmall, color = Muted)
+        HorizontalDivider(Modifier.weight(1f), color = Border.copy(alpha = .8f))
     }
 }
 

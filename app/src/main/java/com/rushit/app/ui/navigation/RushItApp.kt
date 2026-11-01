@@ -222,6 +222,8 @@ fun RushItApp(auth: AuthViewModel, shop: ShopViewModel, orders: OrderViewModel) 
                             onChangeNumber = auth::changePhoneNumber,
                             onBack = { nav.popBackStack() },
                             onClearError = auth::clearError,
+                            onGoogleSignIn = auth::initiateGoogleSignIn,
+                            googleLoading = authUi.signingIn,
                         )
                     }
                     // Onboarding is the only entry on the back stack, so the system back button
