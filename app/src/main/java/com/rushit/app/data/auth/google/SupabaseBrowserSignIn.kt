@@ -101,7 +101,8 @@ internal class SupabaseBrowserSignIn(
 internal fun foregroundActivity(provider: () -> Activity?): Activity? =
     provider()?.takeIf {
         !it.isFinishing && !it.isDestroyed &&
-            it.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+            (it as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
+                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true
     }
 
 private fun launchCustomTab(activity: Activity, url: String) {

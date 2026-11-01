@@ -11,12 +11,14 @@ class ForegroundActivityTracker {
 
     val activity: Activity?
         get() = reference.get()?.takeIf {
-            !it.isFinishing && !it.isDestroyed && it.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+            !it.isFinishing && !it.isDestroyed &&
+                (it as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true
         }
 
     /** Idempotent for an Activity recreation; each Activity gets its own observer. */
     fun bind(activity: Activity) {
-        activity.lifecycle.addObserver(object : DefaultLifecycleObserver {
+        val owner = activity as? LifecycleOwner ?: return
+        owner.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) {
                 reference = WeakReference(activity)
             }

@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         AuthViewModel.factory(app.authRepository, app.googleSignIn)
     }
     private val shop: ShopViewModel by viewModels { ShopViewModel.factory(applicationContext, app.catalogRepository) }
-    private val orders: OrderViewModel by viewModels { OrderViewModel.factory(applicationContext, app.orderRepository) }
+    private val orders: OrderViewModel by viewModels { OrderViewModel.factory(app.orderRepository) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
