@@ -127,8 +127,6 @@ enum class AuthFailureKind {
     /** The person dismissed the Google account picker. Never shown as an error. */
     CANCELLED,
 
-    /** No Google account is available on this device. */
-    NO_ACCOUNT,
 
     /** The build is missing Supabase or Google OAuth configuration. */
     UNCONFIGURED,

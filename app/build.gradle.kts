@@ -186,10 +186,13 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    // Supabase's official Android OAuth redirect flow uses a browser/Custom Tab, never a WebView.
+    implementation("androidx.browser:browser:1.8.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.robolectric:robolectric:4.13")
     // Lets the tests build real supabase-kt RestExceptions, whose message embeds request headers.
     // That is what makes "no credential ever reaches a user-facing string" an asserted property.
     testImplementation("io.ktor:ktor-client-mock:2.3.11")

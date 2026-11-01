@@ -8,12 +8,18 @@ import com.rushit.app.data.auth.SecureSessionStore
 import com.rushit.app.data.auth.SupabaseAuthGateway
 import com.rushit.app.data.auth.SupabaseAuthRepository
 import com.rushit.app.data.auth.UnconfiguredAuthGateway
+import com.rushit.app.data.auth.google.ForegroundActivityTracker
+import com.rushit.app.data.auth.google.GoogleSignInClient
+import com.rushit.app.data.auth.google.GoogleSignInCoordinator
+import com.rushit.app.data.auth.google.OfficialSupabaseOAuthTransport
+import com.rushit.app.data.auth.google.SupabaseOAuthRedirect
 import com.rushit.app.data.order.LocalOrderRepository
 import com.rushit.app.data.repository.SampleCatalogRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.gotrue.Auth
+import io.github.jan.supabase.gotrue.FlowType
 import io.github.jan.supabase.postgrest.Postgrest
 
 class RushItApplication : Application() {
@@ -40,6 +46,12 @@ class RushItApplication : Application() {
                 alwaysAutoRefresh = true
                 // Pause auto-refresh while the app is backgrounded and resume on return.
                 enableLifecycleCallbacks = true
+                // Official Supabase browser OAuth fallback. PKCE binds the callback to this app's
+                // persisted verifier; never accept implicit access/refresh tokens from a URL.
+                flowType = FlowType.PKCE
+                scheme = SupabaseOAuthRedirect.SCHEME
+                host = SupabaseOAuthRedirect.HOST
+                defaultRedirectUrl = SupabaseOAuthRedirect.URL
             }
             install(Postgrest)
             // Used for the account-deletion Edge Function; the service-role key stays server-side.
@@ -56,6 +68,18 @@ class RushItApplication : Application() {
     }
 
     val authRepository: AuthRepository by lazy { SupabaseAuthRepository(authGateway) }
+
+    val foregroundActivityTracker = ForegroundActivityTracker()
+
+    /** One request owner shared by every recreated MainActivity in this process. */
+    val googleSignIn: GoogleSignInClient by lazy {
+        GoogleSignInCoordinator(
+            activityProvider = { foregroundActivityTracker.activity },
+            webClientId = BuildConfig.GOOGLE_WEB_CLIENT_ID,
+            browserTransport = OfficialSupabaseOAuthTransport(supabaseClient),
+            browserConfigured = isSupabaseConfigured,
+        )
+    }
 
     // Replace this binding, not the screens, once the real schema and RLS are configured.
     val catalogRepository by lazy { SampleCatalogRepository() }

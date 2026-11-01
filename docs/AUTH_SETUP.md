@@ -50,9 +50,11 @@ Project: create one or reuse an existing project at <https://console.cloud.googl
 
 - Application type: **Web application**.
 - Name: `RushIt Web (Supabase audience)`.
-- Authorized JavaScript origins / redirect URIs: **not required** for this flow. RushIt uses the
-  Credential Manager ID-token flow, not a browser redirect, so Supabase never sends the user to
-  Google itself.
+- Authorized redirect URI: add `https://YOUR_PROJECT.supabase.co/auth/v1/callback`. This is the
+  Google-to-Supabase callback used by the browser fallback. RushIt first tries Credential Manager's
+  native ID-token flow; if no matching credential or Play Services support is available, it uses
+  Supabase's official PKCE browser flow. The app's own return URL is `rushit://auth/callback`
+  (configured in Supabase URL Configuration below, not as a Google Web redirect URI).
 - Copy the resulting **Client ID** — it becomes `GOOGLE_WEB_CLIENT_ID` in the app build *and* the
   client ID in the Supabase Google provider. Both must be the same value, because Supabase verifies
   that the token's `aud` claim matches a client ID it was configured with.
@@ -98,11 +100,13 @@ client.
 - **Client ID**: the Web application client ID from §1.2.
 - **Client Secret**: the matching secret from §1.2. This is the only place the secret lives.
 - Leave *Authorized Client IDs* empty unless a non-Web audience is added later.
-- **Authentication → URL Configuration**: Site URL and Redirect URLs are not used by the ID-token
-  flow. No OAuth callback URL is required, because no browser redirect occurs. (If a browser-based
-  flow is ever added, the callback is
-  `https://YOUR_PROJECT.supabase.co/auth/v1/callback` and it must be registered as a redirect URI on
-  a Web client.)
+- **Authentication → URL Configuration**: add the exact app redirect `rushit://auth/callback` to
+  **Redirect URLs** (allow-list). Keep the Site URL as your real HTTPS product/site URL. The browser
+  fallback uses Supabase PKCE, launches a Custom Tab/browser from the foreground Activity, accepts
+  only the exact `rushit://auth/callback` path, and exchanges the code through the official Supabase
+  SDK using the persisted verifier. It never accepts implicit access/refresh tokens from a URL.
+  Returning from the browser without completing cancels the pending attempt; duplicate callbacks
+  are not exchanged twice.
 - **Authentication → Settings**: keep *Allow new users to sign up* enabled; RushIt creates an account
   on first Google sign-in. Consider enabling *Secure email change* and rate limits appropriate for
   production.
@@ -245,3 +249,32 @@ nullable) and `profiles.phone_verified`, which no client can set — the column 
 account ownership is always `auth.users.id`, so a verified phone identity can later be linked to an
 existing account through Supabase identities without creating a second profile. Nothing merges
 accounts on the basis of a matching email or user-supplied metadata.
+
+
+## Google Sign-In request and fallback behaviour
+
+RushIt uses `androidx.credentials.CredentialManager.getCredential(activity, request)` with
+`GetGoogleIdOption` (not the deprecated `GoogleSignInClient` API). The server client ID is the Web
+OAuth client ID. Each tap generates a fresh UUID nonce, sends its lowercase SHA-256 hex digest to
+Google, and retains the raw nonce for Supabase. The first request sets
+`filterByAuthorizedAccounts(true)` and auto-select; `NoCredentialException` triggers a second
+request with `filterByAuthorizedAccounts(false)` and the same nonce. That exception is **not** a
+diagnosis that the device has no Google account. Picker cancellation stops immediately.
+
+Before the native ID token reaches Supabase, RushIt checks issuer, subject, audience, expiry (with
+bounded clock skew), and nonce parity/hash. Supabase performs authoritative token verification.
+Each credential stage re-resolves the current RESUMED Activity through a weak lifecycle tracker.
+
+If both native stages have no credential, or Credential Manager/Play Services is unavailable, the
+app-scoped coordinator starts the official Supabase browser OAuth fallback when Supabase is
+configured. User cancellation and ordinary network/token errors do not silently start a browser.
+The SDK persists its PKCE verifier across process recreation; callbacks without that verifier are
+rejected. Browser sessions are imported by `exchangeCodeForSession`, then the normal account/profile
+restore path runs. There is no client-side browser ID token to pre-validate; Supabase verifies the
+provider response server-side. No OAuth client secret is present in the app.
+
+Manual device checks still required: authorized and first-time accounts, picker cancellation,
+rotation during the picker, a device without supported Play Services, browser cancellation,
+process death before the callback, duplicate callback delivery, offline exchange, and the exact
+Supabase redirect allow-list entry above. Unit tests are not evidence of a live Google/Supabase
+sign-in.

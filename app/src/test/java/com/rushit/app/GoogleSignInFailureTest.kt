@@ -2,8 +2,8 @@ package com.rushit.app
 
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
-import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.exceptions.GetCredentialUnsupportedException
+import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.exceptions.NoCredentialException
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
@@ -40,21 +40,17 @@ class GoogleSignInFailureTest {
     }
 
     @Test
-    fun `a device with no Google account is reported as such`() {
+    fun `no credential is not evidence that the device has no Google account`() {
         assertEquals(
-            GoogleSignInOutcome.NoAccount,
+            GoogleSignInOutcome.NoCredentialAvailable,
             classifyGoogleSignInFailure(NoCredentialException()),
         )
     }
 
     @Test
-    fun `an unsupported picker points at Google Play services`() {
-        val unsupported = classifyGoogleSignInFailure(GetCredentialUnsupportedException()) as GoogleSignInOutcome.Failed
-        assertEquals(GoogleSignInMessages.PLAY_SERVICES, unsupported.message)
-
-        val misconfigured = classifyGoogleSignInFailure(GetCredentialProviderConfigurationException())
-            as GoogleSignInOutcome.Failed
-        assertEquals(GoogleSignInMessages.PLAY_SERVICES, misconfigured.message)
+    fun `unsupported and misconfigured Play Services are internal browser fallback signals`() {
+        assertEquals(GoogleSignInOutcome.Unsupported, classifyGoogleSignInFailure(GetCredentialUnsupportedException()))
+        assertEquals(GoogleSignInOutcome.Unsupported, classifyGoogleSignInFailure(GetCredentialProviderConfigurationException()))
     }
 
     @Test

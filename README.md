@@ -155,7 +155,10 @@ The manual steps that remain, all documented in `docs/AUTH_SETUP.md`:
 1. Configure the OAuth consent screen and add test users while the publishing status is *Testing*.
 2. Create a **Web application** OAuth client (the audience) and an **Android** OAuth client for
    `com.rushit.app` with debug, release and Play App Signing SHA-1 fingerprints.
-3. Enable the Google provider in Supabase with that client ID and secret.
+3. Enable the Google provider in Supabase with that client ID and secret. Add
+   `https://YOUR_PROJECT.supabase.co/auth/v1/callback` to the Google Web client's authorized redirect
+   URIs and the exact app URL `rushit://auth/callback` to Supabase **Authentication → URL
+   Configuration → Redirect URLs**. These support the official browser OAuth fallback.
 4. Apply `supabase/migrations/20261031_rushit_auth.sql` and
    `supabase/migrations/20261031120000_google_auth_accounts.sql` with `supabase db push`. The second
    is idempotent and forward-only: it reconciles the first schema to the account model the app uses,
@@ -167,6 +170,15 @@ The manual steps that remain, all documented in `docs/AUTH_SETUP.md`:
 5. Deploy account deletion: `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=…` then
    `supabase functions deploy delete-account`. Without it, and without the fallback RPC, **Delete
    account** reports that deletion is unavailable and changes nothing.
+
+Google sign-in first requests previously authorized accounts through Credential Manager, then retries
+with the unrestricted account picker using the same hashed nonce. `NoCredentialException` is not
+reported as “no Google account on this device.” Cancellation is silent. If native credentials remain
+unavailable or Play Services is unsupported, RushIt opens Supabase's official PKCE browser flow in a
+Custom Tab/browser and accepts only the verified `rushit://auth/callback` code callback. Native tokens
+retain audience/nonce pre-validation before Supabase exchange; browser codes require the SDK's
+persisted PKCE verifier. Duplicate requests/callbacks are guarded, and Activity recreation rebinds the
+foreground host without retaining a destroyed Activity.
 
 Runtime behaviour: on launch the stored session is read from Keystore-encrypted storage, handed to the
 Supabase SDK, verified with `/auth/v1/user` and refreshed when necessary; a valid session routes
@@ -198,7 +210,8 @@ metadata.
 ### Suggested device smoke test
 
 1. Launch with and without a real existing session, and on a slow/offline connection; confirm visible splash artwork and one correct route without a long hang, and that a restored session never shows the login screen first. From Account, exercise Edit profile, Sign out and Delete account.
-2. Tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a device with no Google account is reported as such, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
+2. Tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a first-time account reaches the unrestricted picker rather than a false “no account” error,
+   that the browser fallback works when native credentials are unavailable, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
 3. Switch modes repeatedly and quickly; confirm the indicator slides once, the category rail clears an incompatible selection, and no blank frame appears. Tap category cards, confirm the products change under a short fade, and check that the selected card scrolls into view. Browse product details, search/filter/sort, wishlist, separate cart retention and computed totals.
 4. Add, edit, select and remove a local address; request, deny and grant approximate location, disable location services, and verify the manual-entry fallback. Open Orders, Tracking and Notifications.
 5. From the cart, open checkout, add an address, change quantities, place a demo order, and walk the journey: confirmation, packing, rider-ready, route, arrival and delivered. Confirm the celebration does not replay when you reopen the order, that Cancel is only offered before pickup, and that every stage is labelled as a demo.

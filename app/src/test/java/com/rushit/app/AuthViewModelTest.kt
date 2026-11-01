@@ -51,6 +51,13 @@ class AuthViewModelTest {
         var outcome: GoogleSignInOutcome = GoogleSignInOutcome.Cancelled
         var gate: CompletableDeferred<Unit>? = null
         var requests = 0
+        var redirectOutcome: GoogleSignInOutcome? = null
+        var redirects = 0
+
+        override suspend fun completeBrowserRedirect(uri: String?): GoogleSignInOutcome? {
+            redirects++
+            return redirectOutcome
+        }
 
         override suspend fun requestGoogleIdToken(): GoogleSignInOutcome {
             requests++
@@ -145,17 +152,46 @@ class AuthViewModelTest {
     }
 
     @Test
-    fun `a device with no Google account explains what to do`() = runTest {
+    fun `no available credential never claims the device has no Google account`() = runTest {
         val gateway = FakeAuthGateway()
-        val google = FakeGoogleSignIn().apply { outcome = GoogleSignInOutcome.NoAccount }
+        val google = FakeGoogleSignIn().apply { outcome = GoogleSignInOutcome.NoCredentialAvailable }
         val vm = viewModel(gateway, google)
         advanceUntilIdle()
 
         vm.initiateGoogleSignIn()
         advanceUntilIdle()
 
-        assertEquals(GoogleSignInMessages.NO_ACCOUNT, vm.error.value)
+        assertEquals(GoogleSignInMessages.UNKNOWN, vm.error.value)
         assertEquals(0, gateway.signIns)
+    }
+
+    @Test
+    fun `browser callback refreshes the SDK-imported account without a native token exchange`() = runTest {
+        val gateway = FakeAuthGateway().apply {
+            session = googleSession(userId)
+            restoreResult = SessionRestoreResult.Restored(googleSession(userId))
+        }
+        val google = FakeGoogleSignIn().apply { redirectOutcome = GoogleSignInOutcome.BrowserSuccess }
+        val vm = viewModel(gateway, google)
+        advanceUntilIdle()
+
+        vm.handleAuthRedirect("rushit://auth/callback?code=abcdefghijklmnopqrstuvwxyz123456")
+        advanceUntilIdle()
+
+        assertEquals(1, google.redirects)
+        assertEquals(0, gateway.signIns)
+        assertTrue(vm.authState.value is AuthState.Authenticated || vm.authState.value is AuthState.ProfileIncomplete)
+        assertFalse(vm.uiState.value.signingIn)
+    }
+
+    @Test
+    fun `unrelated deep links never start an auth exchange`() = runTest {
+        val google = FakeGoogleSignIn()
+        val vm = viewModel(FakeAuthGateway(), google)
+        advanceUntilIdle()
+        vm.handleAuthRedirect("https://example.com/callback?code=abcdefghijklmnopqrstuvwxyz123456")
+        advanceUntilIdle()
+        assertEquals(0, google.redirects)
     }
 
     @Test
@@ -557,12 +593,12 @@ class AuthViewModelTest {
     @Test
     fun `clearing an error removes it`() = runTest {
         val gateway = FakeAuthGateway()
-        val google = FakeGoogleSignIn().apply { outcome = GoogleSignInOutcome.NoAccount }
+        val google = FakeGoogleSignIn().apply { outcome = GoogleSignInOutcome.NoCredentialAvailable }
         val vm = viewModel(gateway, google)
         advanceUntilIdle()
         vm.initiateGoogleSignIn()
         advanceUntilIdle()
-        assertEquals(GoogleSignInMessages.NO_ACCOUNT, vm.error.value)
+        assertEquals(GoogleSignInMessages.UNKNOWN, vm.error.value)
 
         vm.clearError()
 
