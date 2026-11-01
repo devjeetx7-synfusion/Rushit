@@ -103,7 +103,7 @@ class PhoneNumbersTest {
 
     @Test
     fun `masking handles short, empty and unformatted input`() {
-        assertEquals("XXXX 5678", PhoneNumbers.maskNational("91234567"))
+        assertEquals("XXXX 4567", PhoneNumbers.maskNational("91234567"))
         assertEquals("X234", PhoneNumbers.maskNational("1234"))
         assertEquals("", PhoneNumbers.maskNational(""))
         assertEquals("XXXXX X3210", PhoneNumbers.maskNational("98-76 5-43210"))

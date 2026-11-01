@@ -133,7 +133,7 @@ object PhoneNumbers {
      * Mask [nationalDigits] for display: every digit except the last [MASK_VISIBLE_DIGITS] becomes
      * `X`, and long numbers keep a readable gap in the middle.
      *
-     * `9876543210` → `XXXXX X3210`, `91234567` → `XXXX 5678`, `1234` → `X234`.
+     * `9876543210` → `XXXXX X3210`, `91234567` → `XXXX 4567`, `1234` → `X234`.
      */
     fun maskNational(nationalDigits: String): String {
         val digits = nationalDigits.filter(Char::isDigit)
