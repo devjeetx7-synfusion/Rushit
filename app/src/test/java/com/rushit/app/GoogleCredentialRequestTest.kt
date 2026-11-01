@@ -14,6 +14,7 @@ import com.rushit.app.data.auth.google.GoogleCredentialRequest
 import com.rushit.app.data.auth.google.GoogleIdRequestSpec
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
+import com.rushit.app.data.auth.google.googleCredentialRequest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
