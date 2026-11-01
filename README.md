@@ -155,7 +155,10 @@ The manual steps that remain, all documented in `docs/AUTH_SETUP.md`:
 1. Configure the OAuth consent screen and add test users while the publishing status is *Testing*.
 2. Create a **Web application** OAuth client (the audience) and an **Android** OAuth client for
    `com.rushit.app` with debug, release and Play App Signing SHA-1 fingerprints.
-3. Enable the Google provider in Supabase with that client ID and secret.
+3. Enable the Google provider in Supabase with that client ID and secret. Add
+   `https://YOUR_PROJECT.supabase.co/auth/v1/callback` to the Google Web client's authorized redirect
+   URIs and the exact app URL `rushit://auth/callback` to Supabase **Authentication → URL
+   Configuration → Redirect URLs**. These support the official browser OAuth fallback.
 4. Apply `supabase/migrations/20261031_rushit_auth.sql` and
    `supabase/migrations/20261031120000_google_auth_accounts.sql` with `supabase db push`. The second
    is idempotent and forward-only: it reconciles the first schema to the account model the app uses,
@@ -167,6 +170,15 @@ The manual steps that remain, all documented in `docs/AUTH_SETUP.md`:
 5. Deploy account deletion: `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=…` then
    `supabase functions deploy delete-account`. Without it, and without the fallback RPC, **Delete
    account** reports that deletion is unavailable and changes nothing.
+
+Google sign-in first requests previously authorized accounts through Credential Manager, then retries
+with the unrestricted account picker using the same hashed nonce. `NoCredentialException` is not
+reported as “no Google account on this device.” Cancellation is silent. If native credentials remain
+unavailable or Play Services is unsupported, RushIt opens Supabase's official PKCE browser flow in a
+Custom Tab/browser and accepts only the verified `rushit://auth/callback` code callback. Native tokens
+retain audience/nonce pre-validation before Supabase exchange; browser codes require the SDK's
+persisted PKCE verifier. Duplicate requests/callbacks are guarded, and Activity recreation rebinds the
+foreground host without retaining a destroyed Activity.
 
 Runtime behaviour: on launch the stored session is read from Keystore-encrypted storage, handed to the
 Supabase SDK, verified with `/auth/v1/user` and refreshed when necessary; a valid session routes
@@ -186,6 +198,7 @@ metadata.
 
 ## Verification and current limitations
 
+- Google Sign-In fix verified on GitHub Actions on 2026-11-01 in [run 41279518039](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41279518039): the exact command `./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain` passed **197 unit tests** (0 failures, 0 errors, 0 skipped). The generated `com.rushit.app` debug APK (versionCode 29) passed signature verification and packaged checks for the configured Google Web Client ID, Credential Manager, the Supabase OAuth fallback, and the exact `rushit://auth/callback` intent filter. Artifacts: `rushit-user-apk` and `rushit-user-unit-test-reports`. This run used the runner's ephemeral debug key because persistent test-signing Secrets are still unset; it is not evidence of stable in-place update signing or a live Google/Supabase device sign-in.
 - The workflow/signing change was verified on GitHub Actions on 2026-10-31: [fixture verification run 41225367021](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41225367021) passed **172 existing JUnit tests** (0 failures, 0 errors, 0 skipped), the required test/build command, unconfigured local `versionCode = 1`, and negative Gradle configuration checks. Two **real debug APKs** built with one disposable test identity had version codes **2 then 3**, identical signing certificates, valid signatures, and the exact existing non-working Google Web Client ID test fixture. Their common public SHA-256 was `12203aabb9efcc4e7294dcd53d98812dab6ea62f4c93fc4496ac901441efa93f`. This was a CI-only fixture, not a production credential; the temporary harness and keys were removed. The HTML/XML test results remain in that run's `rushit-signing-fix-test-reports` artifact.
 - The production workflow was also exercised in [run 41225366969](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41225366969): it **correctly failed before compilation** because `GOOGLE_WEB_CLIENT_ID`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` were missing, posted the pull-request failure comment, and uploaded no APK. A fully configured production-workflow build, repeated runs using the repository's persistent signing Secrets, real Google/Supabase authentication, and an on-device in-place update still need verification after the manual configuration above. The fixture run is not evidence that those external services are configured.
 - Local workflow validation passed YAML parsing, actionlint, Bash syntax/ShellCheck, ignore-rule checks, and **57 workflow fixture checks** (including mocked APK-verifier failure paths and real `keytool` keystore decoding/reuse). The local Gradle attempt was blocked before configuration by the sandbox's inability to download the Gradle distribution; the actual Android tests/builds above ran on GitHub Actions, not locally. `supabase/tests/rls_isolation.sql` needs the Supabase CLI and Docker and has **not** been executed. Run `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` and `supabase test db` in a configured environment before shipping; lint and database tests were not part of this verification.
@@ -198,7 +211,8 @@ metadata.
 ### Suggested device smoke test
 
 1. Launch with and without a real existing session, and on a slow/offline connection; confirm visible splash artwork and one correct route without a long hang, and that a restored session never shows the login screen first. From Account, exercise Edit profile, Sign out and Delete account.
-2. Tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a device with no Google account is reported as such, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
+2. Tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a first-time account reaches the unrestricted picker rather than a false “no account” error,
+   that the browser fallback works when native credentials are unavailable, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
 3. Switch modes repeatedly and quickly; confirm the indicator slides once, the category rail clears an incompatible selection, and no blank frame appears. Tap category cards, confirm the products change under a short fade, and check that the selected card scrolls into view. Browse product details, search/filter/sort, wishlist, separate cart retention and computed totals.
 4. Add, edit, select and remove a local address; request, deny and grant approximate location, disable location services, and verify the manual-entry fallback. Open Orders, Tracking and Notifications.
 5. From the cart, open checkout, add an address, change quantities, place a demo order, and walk the journey: confirmation, packing, rider-ready, route, arrival and delivered. Confirm the celebration does not replay when you reopen the order, that Cancel is only offered before pickup, and that every stage is labelled as a demo.

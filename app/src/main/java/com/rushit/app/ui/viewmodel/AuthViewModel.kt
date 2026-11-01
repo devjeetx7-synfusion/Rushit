@@ -15,6 +15,7 @@ import com.rushit.app.data.auth.google.GoogleSignInClient
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
 import com.rushit.app.data.auth.google.IdTokenCheck
+import com.rushit.app.data.auth.google.SupabaseOAuthRedirect
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,16 +91,45 @@ class AuthViewModel(
         lastRouted = routeFor(repository.authState.value)
     }
 
-    /** Launch the real Credential Manager flow. Ignored while a request is already in flight. */
+    /** Launch the two-stage flow. The flag is set synchronously, before a second tap can queue. */
     fun initiateGoogleSignIn() {
         if (_uiState.value.signingIn) return
+        _uiState.update { it.copy(signingIn = true) }
+        _error.value = null
         viewModelScope.launch {
-            if (_uiState.value.signingIn) return@launch
-            _uiState.update { it.copy(signingIn = true) }
-            _error.value = null
             try {
                 handleGoogleOutcome(googleSignIn.requestGoogleIdToken())
             } finally {
+                _uiState.update { it.copy(signingIn = false) }
+            }
+        }
+    }
+
+    /**
+     * Consume only RushIt's exact OAuth callback. The application-scoped client also deduplicates
+     * the code, so recreating an Activity with the same Intent cannot exchange it twice.
+     */
+    fun handleAuthRedirect(uri: String?) {
+        if (SupabaseOAuthRedirect.parse(uri) == SupabaseOAuthRedirect.Result.Ignored) return
+        if (_uiState.value.signingIn) return
+        _uiState.update { it.copy(signingIn = true) }
+        viewModelScope.launch {
+            try {
+                googleSignIn.completeBrowserRedirect(uri)?.let { handleGoogleOutcome(it) }
+            } finally {
+                _uiState.update { it.copy(signingIn = false) }
+            }
+        }
+    }
+
+    /**
+     * A browser return without a callback is a cancellation. A callback already being exchanged,
+     * or a native request still in flight, is protected by the client's single-flight locks.
+     */
+    fun onForeground() {
+        viewModelScope.launch {
+            val outcome = googleSignIn.cancelBrowserSignIn()
+            if (outcome == GoogleSignInOutcome.Cancelled) {
                 _uiState.update { it.copy(signingIn = false) }
             }
         }
@@ -111,7 +141,17 @@ class AuthViewModel(
             // would punish people for changing their mind.
             GoogleSignInOutcome.Cancelled -> Unit
 
-            GoogleSignInOutcome.NoAccount -> _error.value = GoogleSignInMessages.NO_ACCOUNT
+            // These are internal signals. The concrete client retries/falls back before returning;
+            // a fake or future client must never turn them into a false "no device account" claim.
+            GoogleSignInOutcome.NoCredentialAvailable -> _error.value = GoogleSignInMessages.UNKNOWN
+            GoogleSignInOutcome.Unsupported -> _error.value = GoogleSignInMessages.PLAY_SERVICES
+            GoogleSignInOutcome.BrowserPending -> Unit
+            GoogleSignInOutcome.BrowserSuccess -> {
+                when (val result = repository.refreshAccount()) {
+                    AuthResult.Success -> Unit
+                    is AuthResult.Failure -> _error.value = result.message
+                }
+            }
 
             GoogleSignInOutcome.Unconfigured -> _error.value = GoogleSignInMessages.UNCONFIGURED
 
