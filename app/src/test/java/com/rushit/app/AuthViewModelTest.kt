@@ -217,7 +217,19 @@ class AuthViewModelTest {
         assertTrue(vm.phoneState.value.codeSent)
         assertTrue(vm.phoneState.value.resendSecondsRemaining > 0)
         assertFalse(vm.phoneState.value.requesting)
+        assertEquals("+91 XXXXX X3210", vm.phoneState.value.maskedPhoneNumber)
         assertEquals("+919876543210", auth.lastPhoneNumber)
+    }
+
+    @Test
+    fun `masked phone number is set in PhoneLoginUiState when verification starts`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.startPhoneVerification(india, "9876543210")
+        runCurrent()
+
+        assertEquals("+91 XXXXX X3210", vm.phoneState.value.maskedPhoneNumber)
     }
 
     @Test

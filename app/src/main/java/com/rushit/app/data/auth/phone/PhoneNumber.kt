@@ -14,6 +14,7 @@ data class CountryCode(
     val dialCode: String,
     val name: String,
     val nationalDigits: IntRange,
+    val flag: String = "",
 )
 
 /**
@@ -57,7 +58,7 @@ object PhoneNumbers {
     const val MASK_VISIBLE_DIGITS = 4
 
     val countries: List<CountryCode> = listOf(
-        CountryCode("IN", "+91", "India", 10..10),
+        CountryCode("IN", "+91", "India", 10..10, "🇮🇳"),
         CountryCode("US", "+1", "United States", 10..10),
         CountryCode("CA", "+1", "Canada", 10..10),
         CountryCode("GB", "+44", "United Kingdom", 10..10),
