@@ -1,8 +1,8 @@
 # RushIt — Google Sign-In and Supabase account setup
 
 This is the manual configuration that RushIt cannot do for itself. The app-side implementation is
-complete and tested; **none of the external Google Cloud or Supabase console steps below have been
-performed or verified**, because no credentials or projects were supplied for this work. Until they
+covered by unit tests and a configured CI APK build; **the external Google Cloud/Supabase console
+steps and a live device sign-in still require manual verification**. Until they
 are done, the app reports its own configuration state honestly instead of pretending to sign anybody
 in.
 
