@@ -212,7 +212,7 @@ class FirebaseAuthRepositoryTest {
     // ---------------------------------------------------------------- phone
 
     @Test
-    fun `requesting a code sends the E.164 number to Firebase`() = runTest {
+    fun `requesting a code sends the E164 number to Firebase`() = runTest {
         val repository = repository()
 
         val outcome = repository.startPhoneVerification(phoneNumber)

@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * Phone-number normalization.
  *
- * Firebase expects E.164 and rejects anything else, so these rules are what keep a typo from
+ * Firebase expects E164 and rejects anything else, so these rules are what keep a typo from
  * becoming a wasted SMS or an unhelpful Firebase error.
  */
 class PhoneNumbersTest {
@@ -18,7 +18,7 @@ class PhoneNumbersTest {
     private val india = PhoneNumbers.byIso("IN")!!
 
     @Test
-    fun `a plain national number becomes E.164`() {
+    fun `a plain national number becomes E164`() {
         val number = PhoneNumbers.normalize(india, "9876543210")
 
         assertNotNull(number)
