@@ -15,6 +15,7 @@ import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
 import com.rushit.app.data.auth.phone.CountryCode
 import com.rushit.app.data.auth.phone.PhoneNumbers
+import com.rushit.app.data.auth.phone.VerificationCode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -176,19 +177,23 @@ class AuthViewModel(
         }
     }
 
-    /** Verify the code. Duplicate submissions are rejected before a second request is built. */
+    /**
+     * Verify the code. Duplicate submissions are rejected before a second request is built, and an
+     * incomplete code is never sent to Firebase: six digits are required, so a false "wrong code"
+     * can never come from a half-typed entry.
+     */
     fun submitPhoneCode(code: String) {
         if (_phoneState.value.verifying) return
-        val trimmed = code.trim()
-        if (trimmed.isEmpty()) {
-            _error.value = "Enter the code RushIt texted you."
+        val problem = VerificationCode.validationMessage(code)
+        if (problem != null) {
+            _error.value = problem
             return
         }
         _error.value = null
         _phoneState.update { it.copy(verifying = true) }
         viewModelScope.launch {
             try {
-                when (val result = repository.submitPhoneCode(trimmed)) {
+                when (val result = repository.submitPhoneCode(VerificationCode.normalize(code))) {
                     AuthResult.Success -> {
                         _phoneState.value = PhoneLoginUiState()
                         stopResendCountdown()

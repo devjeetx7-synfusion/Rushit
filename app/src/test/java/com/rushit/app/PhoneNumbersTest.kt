@@ -93,6 +93,39 @@ class PhoneNumbersTest {
     }
 
     @Test
+    fun `a number is masked for the code screen but keeps the last four digits`() {
+        val number = PhoneNumbers.normalize(india, "9876543210")!!
+
+        assertEquals("+91 XXXXX X3210", number.masked)
+        // The masked form never contains every digit of the real number.
+        assertTrue(number.masked.count { it.isDigit() } < number.nationalNumber.length)
+    }
+
+    @Test
+    fun `masking handles short, empty and unformatted input`() {
+        assertEquals("XXXX 4567", PhoneNumbers.maskNational("91234567"))
+        assertEquals("X234", PhoneNumbers.maskNational("1234"))
+        assertEquals("", PhoneNumbers.maskNational(""))
+        assertEquals("XXXXX X3210", PhoneNumbers.maskNational("98-76 5-43210"))
+    }
+
+    @Test
+    fun `a pasted international number is reduced to its national part for the field`() {
+        assertEquals("9876543210", PhoneNumbers.nationalDigitsFor(india, "+91 98765 43210"))
+        assertEquals("9876543210", PhoneNumbers.nationalDigitsFor(india, "919876543210"))
+        // Partial input is left alone so typing is never rewritten mid-number.
+        assertEquals("98765", PhoneNumbers.nationalDigitsFor(india, "98765"))
+        assertEquals("987654321012", PhoneNumbers.nationalDigitsFor(india, "987654321012"))
+    }
+
+    @Test
+    fun `the editable field is capped at the country's longest national number`() {
+        assertEquals(10, PhoneNumbers.maxDigits(india))
+        assertEquals(8, PhoneNumbers.maxDigits(PhoneNumbers.byIso("SG")!!))
+        assertEquals(12, PhoneNumbers.maxDigits(PhoneNumbers.byIso("ID")!!))
+    }
+
+    @Test
     fun `a shorter national number is accepted for a country that allows it`() {
         val singapore = PhoneNumbers.byIso("SG")!!
         assertEquals("+6591234567", PhoneNumbers.normalize(singapore, "91234567")!!.e164)

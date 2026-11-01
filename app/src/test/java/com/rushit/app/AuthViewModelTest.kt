@@ -302,6 +302,58 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun `a code shorter than six digits never reaches Firebase`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.startPhoneVerification(india, "9876543210")
+        runCurrent()
+
+        vm.submitPhoneCode("12345")
+        runCurrent()
+
+        assertEquals(0, auth.verifyCount)
+        assertNotNull(vm.error.value)
+        // The OTP step stays open so the missing digit can be typed.
+        assertTrue(vm.phoneState.value.codeSent)
+        assertFalse(vm.phoneState.value.verifying)
+    }
+
+    @Test
+    fun `a pasted code is normalized before Firebase verifies it`() = runTest(dispatcher) {
+        auth.identity = phoneIdentity()
+        profiles.profiles[TestConfig.USER_B] = completedProfile(firebaseUid = TestConfig.USER_B)
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.startPhoneVerification(india, "9876543210")
+        runCurrent()
+
+        vm.submitPhoneCode(" 123-456 ")
+        runCurrent()
+
+        assertEquals(1, auth.verifyCount)
+        assertEquals("123456", auth.lastCode)
+        assertTrue(vm.authState.value is AuthState.Authenticated)
+    }
+
+    @Test
+    fun `a resend restarts the countdown`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.startPhoneVerification(india, "9876543210")
+        runCurrent()
+        advanceTimeBy(31_000L)
+        runCurrent()
+        now += 31_000L
+
+        vm.resendPhoneCode()
+        runCurrent()
+
+        assertEquals(1, auth.resendCount)
+        assertTrue(vm.phoneState.value.resendSecondsRemaining > 0)
+        assertTrue(vm.phoneState.value.codeSent)
+    }
+
+    @Test
     fun `changing the number cancels the pending verification`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()

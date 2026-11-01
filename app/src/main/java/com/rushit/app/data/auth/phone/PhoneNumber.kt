@@ -33,6 +33,14 @@ data class PhoneNumber(
     /** `+91 9876543210` — display only, never sent anywhere. */
     val display: String get() = "${country.dialCode} $nationalNumber"
 
+    /**
+     * `+91 XXXXX X3210` — the OTP screen's confirmation line.
+     *
+     * The last four digits stay readable so the person can confirm which number received the code;
+     * everything else is masked, so a screenshot of the OTP screen does not disclose the full number.
+     */
+    val masked: String get() = "${country.dialCode} ${PhoneNumbers.maskNational(nationalNumber)}"
+
     override fun toString(): String = display
 }
 
@@ -44,6 +52,9 @@ data class PhoneNumber(
  * Firebase is asked to send an SMS.
  */
 object PhoneNumbers {
+
+    /** How many trailing digits stay readable when a number is masked for display. */
+    const val MASK_VISIBLE_DIGITS = 4
 
     val countries: List<CountryCode> = listOf(
         CountryCode("IN", "+91", "India", 10..10),
@@ -115,6 +126,26 @@ object PhoneNumbers {
         return PhoneNumber(country, national)
     }
 
+    /** The number of digits the editable field may hold for [country]. */
+    fun maxDigits(country: CountryCode): Int = country.nationalDigits.last
+
+    /**
+     * Mask [nationalDigits] for display: every digit except the last [MASK_VISIBLE_DIGITS] becomes
+     * `X`, and long numbers keep a readable gap in the middle.
+     *
+     * `9876543210` → `XXXXX X3210`, `91234567` → `XXXX 4567`, `1234` → `X234`.
+     */
+    fun maskNational(nationalDigits: String): String {
+        val digits = nationalDigits.filter(Char::isDigit)
+        if (digits.isEmpty()) return ""
+        // At least one digit is always masked, so an unusually short number is not printed in full.
+        val visible = if (digits.length <= 1) 0 else minOf(MASK_VISIBLE_DIGITS, digits.length - 1)
+        val masked = "X".repeat(digits.length - visible) + digits.takeLast(visible)
+        if (masked.length < 8) return masked
+        val split = masked.length / 2
+        return masked.substring(0, split) + " " + masked.substring(split)
+    }
+
     /** A person-readable reason [raw] cannot be used, or null when it is acceptable. */
     fun errorFor(country: CountryCode, raw: String): String? {
         val digits = digitsOf(raw)
@@ -128,6 +159,15 @@ object PhoneNumbers {
             else -> null
         }
     }
+
+    /**
+     * The national part of [raw], with a pasted international dialling code removed.
+     *
+     * Used by the editable field itself: pasting `+91 98765 43210` (or `919876543210`) must leave the
+     * ten national digits in the field instead of being truncated to a different, wrong number.
+     */
+    fun nationalDigitsFor(country: CountryCode, raw: String): String =
+        nationalDigitsOf(country, digitsOf(raw))
 
     /**
      * The national part of [digits], with a pasted international dialling code removed.

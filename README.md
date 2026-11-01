@@ -143,11 +143,14 @@ version is:
 1. **Firebase project.** Create (or reuse) a Firebase project, add an Android app with package
    `com.rushit.app`, and register the SHA-1 of every signing identity you install with (debug key,
    CI test key, Play App Signing). Download `google-services.json` and place it at
-   `app/google-services.json` — it is git-ignored, and Gradle applies the `google-services` plugin
-   only when the file exists (`BuildConfig.FIREBASE_CONFIGURED`).
+   `app/google-services.json` (keep your own project's copy out of version control). Gradle applies
+   the `google-services` plugin only when the file exists (`BuildConfig.FIREBASE_CONFIGURED`).
 2. **Enable the sign-in methods.** Firebase console → Authentication → Sign-in method: enable
    **Google** and **Phone**. Under Google, note the **Web client ID** — that value is
-   `GOOGLE_WEB_CLIENT_ID`, and it is the audience Firebase expects in the Google ID token.
+   `GOOGLE_WEB_CLIENT_ID`, and it is the audience Firebase expects in the Google ID token. It is
+   optional at build time: when it is not supplied, the build uses the Web OAuth client that
+   `google-services.json` already records for `com.rushit.app`, so Google sign-in works from the
+   Firebase config file alone.
 3. **Phone verification.** Android app verification uses Play Integrity automatically (add your
    release SHA-256 under Project settings → App Check / Android app), with reCAPTCHA as the fallback.
    For automated or repeated manual testing, add Firebase **test phone numbers** with fixed codes
@@ -206,6 +209,21 @@ SMS; resends are throttled to one per 30 seconds, and a second request while a c
 sends a second SMS. Firebase test phone numbers are the supported way to exercise this without
 spending money.
 
+### The sign-in screens
+
+`ui/screens/login/` holds three steps that share one visual language (cream background, RushIt
+wordmark, rider artwork on the entry screen, white rounded card, policy footer):
+
+| Screen | Content |
+| --- | --- |
+| `LoginScreen` | Welcome card: **Continue with phone number** as the red primary action, an "or" rule, then **Continue with Google**. Help button, terms and privacy links. |
+| `PhoneNumberScreen` | "Enter your mobile number", country selector defaulting to **India (+91)**, digits-only field capped at the country's national length (10 for India), **Send OTP**, and the Google alternative. |
+| `OtpVerificationScreen` | "Enter verification code", the masked destination number, six aligned boxes driven by one text field (paste, backspace across boxes, IME code suggestion and TalkBack all work), **Verify & Continue**, and `Resend OTP in 00:30`. |
+
+The number and the code live in `AuthViewModel`'s `PhoneLoginUiState` plus screen-local state; the
+Firebase verification id, resend token and OTP never do. Both phone steps are one navigation route so
+the system back button undoes the OTP step instead of abandoning a pending verification.
+
 ### Runtime behaviour
 
 On launch Firebase restores its own persisted session; the app waits for Firebase's first auth-state
@@ -229,15 +247,28 @@ stay separate. Linking a legacy Supabase-Auth row to a Firebase account is a del
 
 ## Verification and current limitations
 
-- **The Firebase Authentication migration has not been compiled or run.** This change was prepared in
-  an environment without a JDK, Android SDK or Gradle distribution, so `./gradlew` could not be
-  executed and no unit test, APK, Gradle configuration or Kotlin compilation was observed. What was
-  done instead: the code was reviewed against the installed SDK versions, the version numbers were
-  checked against the published Maven metadata, and the Firebase/Supabase integration was checked
-  against the current Supabase documentation. Nothing about this migration may be described as
-  verified until `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` passes in a
-  configured environment and the backend steps in `docs/AUTH_SETUP.md` are completed. The exact
-  remaining manual steps are listed in `docs/AUTH_MIGRATION_REPORT.md`.
+- **The sign-in UI pass (2026-11-01) is compiled and tested by CI, not on a device.** The login card
+  was reordered (phone primary, Google secondary), the phone flow was split into a number step and a
+  six-box OTP step with a `mm:ss` resend timer, a shared policy footer was extracted, and
+  `VerificationCodeTest` plus new `PhoneNumbersTest`/`AuthViewModelTest` cases were added. The
+  authoring sandbox had no JDK, Android SDK or Gradle distribution, so `./gradlew` was not run there.
+  GitHub Actions [run 41324448696](https://github.com/devjeetx7-synfusion/Rushit/actions/runs/41324448696)
+  then ran `./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain`:
+  **193 unit tests, 0 failures, 0 errors, 0 skipped**, `:app:assembleDebug` succeeded, and the
+  resulting `com.rushit.app` debug APK (versionCode 44) passed the package/versionCode,
+  packaged-configuration and `apksigner` signature checks. That proves compilation and the tested
+  logic only: no screen was rendered on an emulator or device, and no real OTP or Google account was
+  used (CI supplies no `GOOGLE_SERVICES_JSON` secret, so the build used only the
+  `app/google-services.json` already in the checkout, and no OTP or Google account was entered
+  anywhere). Layout, keyboard, font-scale, landscape and TalkBack behaviour of the new screens
+  remain unverified.
+- **The Firebase Authentication migration was authored without a build, and is now compiled by the
+  CI run above.** The migration itself was prepared in an environment without a JDK, Android SDK or
+  Gradle distribution, so no unit test, APK, Gradle configuration or Kotlin compilation was observed
+  while it was written; the follow-up UI pass had the whole tree compiled and its 193 unit tests
+  executed by GitHub Actions. Lint has **not** been run, and the backend steps in
+  `docs/AUTH_SETUP.md` (Firebase console, Supabase third-party auth, the migration) are still
+  outstanding. The exact remaining manual steps are listed in `docs/AUTH_MIGRATION_REPORT.md`.
 - **Superseded history:** the run below predates the Firebase migration. It proves that the *previous*
   Google/Supabase-Auth build compiled, passed 197 unit tests and produced a signed APK; its
   OAuth-fallback and exact `rushit://auth/callback` intent-filter checks no longer describe the app,
@@ -257,7 +288,7 @@ stay separate. Linking a legacy Supabase-Auth row to a Firebase account is a del
 ### Suggested device smoke test
 
 1. Launch with and without a real existing session, and on a slow/offline connection; confirm visible splash artwork and one correct route without a long hang, and that a restored session never shows the login screen first. From Account, exercise Edit profile, Sign out and Delete account.
-2. Tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a first-time account reaches the unrestricted picker rather than a false “no account” error, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Then open the phone screen, sign in with a Firebase **test** number and its fixed code, confirm a wrong code keeps the code step open, that resend is disabled for 30 seconds, and that backing out of the code step is silent. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
+2. On the login card tap **Continue with phone number** (the red primary button): confirm the number screen defaults to India (+91), that letters cannot be typed, that a 9- or 11-digit number keeps **Send OTP** disabled with a readable reason, and that **Send OTP** then shows the spinner. With a Firebase **test** number and its fixed code, confirm the six boxes fill one at a time, that pasting a whole code works, that the heading shows the masked destination number, that a wrong code keeps the step open and clears the boxes while the message stays, and that **Resend OTP in 00:30** counts down before resend becomes available. Pressing system Back on the code step must return to the number screen without an error. Then tap **Continue with Google**: confirm the real account picker opens, that backing out shows no error, that a first-time account reaches the unrestricted picker rather than a false “no account” error, and that a first sign-in lands on onboarding with the Google name and photo pre-filled. Sign in again after killing the app and confirm the customized name survives. Confirm Help, the policy links and the duplicate-tap guard behave correctly.
 3. Switch modes repeatedly and quickly; confirm the indicator slides once, the category rail clears an incompatible selection, and no blank frame appears. Tap category cards, confirm the products change under a short fade, and check that the selected card scrolls into view. Browse product details, search/filter/sort, wishlist, separate cart retention and computed totals.
 4. Add, edit, select and remove a local address; request, deny and grant approximate location, disable location services, and verify the manual-entry fallback. Open Orders, Tracking and Notifications.
 5. From the cart, open checkout, add an address, change quantities, place a demo order, and walk the journey: confirmation, packing, rider-ready, route, arrival and delivered. Confirm the celebration does not replay when you reopen the order, that Cancel is only offered before pickup, and that every stage is labelled as a demo.

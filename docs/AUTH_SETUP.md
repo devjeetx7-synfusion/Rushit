@@ -56,9 +56,13 @@ and no `rushit://` deep link, no Custom Tab and no browser redirect.
    signing fingerprint. A missing fingerprint produces `GetCredentialProviderConfigurationException`
    / "no credentials", not a helpful error.
 5. Download **`google-services.json`** and place it at **`app/google-services.json`**.
-   It is git-ignored. Gradle applies the `google-services` plugin only when that file exists and emits
+   Gradle applies the `google-services` plugin only when that file exists and emits
    `BuildConfig.FIREBASE_CONFIGURED`; without it the app still builds and reports itself as
-   unconfigured instead of crashing.
+   unconfigured instead of crashing. This checkout contains one file for `com.rushit.app`; replace it
+   with your own project's file and keep that copy out of version control (`.gitignore` already
+   ignores the name). The file contains project identifiers, not secrets.
+   The Web client ID for Google sign-in is read from this file when `GOOGLE_WEB_CLIENT_ID` is not
+   supplied (see §4).
 
 ### 2.2 Enable the sign-in methods
 
@@ -247,6 +251,11 @@ The build **fails** if `GOOGLE_CLIENT_SECRET` is supplied, if `GOOGLE_WEB_CLIENT
 client id, if `SUPABASE_URL` is not a bare HTTPS origin, or if `SUPABASE_ANON_KEY` is anything other
 than a publishable key or a legacy `role: anon` JWT.
 
+`GOOGLE_WEB_CLIENT_ID` is optional when `app/google-services.json` already records the Google
+**Web** client for `com.rushit.app` (the `client_type: 3` entry): Gradle falls back to it and logs
+which source it used. An explicit `GOOGLE_WEB_CLIENT_ID` always wins, so CI keeps asserting the
+exact value it was given. The fallback is still the project's own Web client — nothing is invented.
+
 **Never** place the following in the APK, the repository, Gradle files or CI variables that reach the
 build: a Google OAuth client secret, a Firebase Admin service-account key, a Supabase service-role key
 or `sb_secret_…` key. The app authenticates with Firebase and authorizes with RLS; it needs none of
@@ -262,12 +271,17 @@ Run these in order; each one has an observable outcome.
    Google transport and single-flight, error mapping, startup routing) pass without a device, network
    or Firebase project.
 2. `./gradlew :app:assembleDebug` then `apksigner verify --min-sdk-version 24 app-debug.apk`.
-3. Install and tap **Continue with Google**: the real account picker appears; cancelling shows no error;
-   a first-time account lands on onboarding with the Google name/photo pre-filled.
+3. Install and tap **Continue with Google** on the login card: the real account picker appears;
+   cancelling shows no error; a first-time account lands on onboarding with the Google name/photo
+   pre-filled. The card's primary (red) button is **Continue with phone number**; Google is below an
+   "or" rule.
 4. Kill and relaunch: the app goes straight to Home without showing the login screen first.
 5. Sign out: back to Login, and the back button does not return to Home.
-6. Open the phone screen and use a **Firebase test number**: the code field appears, a wrong code
-   keeps it open with a readable message, resend is disabled for 30 seconds, the right code signs in.
+6. Tap **Continue with phone number** and use a **Firebase test number**: the number screen defaults
+   to India (+91) and rejects letters and impossible lengths before sending; **Send OTP** shows a
+   spinner; the six-box code screen names the masked destination number; a wrong code keeps the step
+   open, clears the boxes and shows a readable message; `Resend OTP in 00:30` counts down before
+   resend is offered; system Back returns to the number step silently; the right code signs in.
 7. Profile edit: change the name/username/photo; the values survive a restart; a duplicate username is
    rejected with a readable message.
 8. Account deletion: the account is removed, the app returns to Login, and a second sign-in with the
