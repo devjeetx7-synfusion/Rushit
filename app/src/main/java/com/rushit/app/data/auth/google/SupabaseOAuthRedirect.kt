@@ -25,7 +25,8 @@ object SupabaseOAuthRedirect {
      */
     fun parse(value: String?): Result {
         if (value.isNullOrBlank() || value.length > 8192) return Result.Ignored
-        val uri = runCatching { URI(value) }.getOrNull() ?: return Result.Rejected
+        val uri = runCatching { URI(value) }.getOrNull()
+            ?: return if (value.startsWith("$SCHEME://", ignoreCase = true)) Result.Rejected else Result.Ignored
         if (!uri.scheme.equals(SCHEME, ignoreCase = true) || !uri.host.equals(HOST, ignoreCase = true)) {
             return Result.Ignored
         }

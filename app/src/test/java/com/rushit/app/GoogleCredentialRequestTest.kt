@@ -14,6 +14,7 @@ import com.rushit.app.data.auth.google.GoogleCredentialRequest
 import com.rushit.app.data.auth.google.GoogleIdRequestSpec
 import com.rushit.app.data.auth.google.GoogleSignInMessages
 import com.rushit.app.data.auth.google.GoogleSignInOutcome
+import com.rushit.app.data.auth.google.SignInNonce
 import com.rushit.app.data.auth.google.googleCredentialRequest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -42,7 +43,7 @@ class GoogleCredentialRequestTest {
         val unrestricted = googleIdOption(spec.copy(authorizedAccountsOnly = false))
         assertFalse(unrestricted.filterByAuthorizedAccounts)
         assertFalse(unrestricted.autoSelectEnabled)
-        assertTrue(googleCredentialRequest(spec) is GetCredentialRequest)
+        assertEquals(1, googleCredentialRequest(spec).credentialOptions.size)
     }
 
     @Test
@@ -58,7 +59,7 @@ class GoogleCredentialRequestTest {
         val outcome = request.execute()
 
         assertEquals(listOf(true, false), seen.map { it.authorizedAccountsOnly })
-        assertEquals(listOf("raw-1", "raw-1"), seen.map { it.hashedNonce })
+        assertEquals(listOf(SignInNonce.hash("raw-1"), SignInNonce.hash("raw-1")), seen.map { it.hashedNonce })
         assertEquals(1, nonceCount)
         assertEquals("second-stage-token", (outcome as GoogleSignInOutcome.Success).idToken)
         assertEquals("raw-1", outcome.rawNonce)
@@ -138,7 +139,10 @@ class GoogleCredentialRequestTest {
     private fun success(token: String): GetCredentialResponse = GetCredentialResponse(
         CustomCredential(
             type = GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL,
-            data = Bundle().apply { putString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID_TOKEN", token) },
+            data = Bundle().apply {
+                putString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID", "google-subject")
+                putString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID_TOKEN", token)
+            },
         ),
     )
 
