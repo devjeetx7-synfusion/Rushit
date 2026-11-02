@@ -21,16 +21,24 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,17 +47,22 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.rushit.app.R
 import com.rushit.app.data.auth.AuthState
 import com.rushit.app.data.auth.RecoveryAction
+import com.rushit.app.data.auth.phone.CountryCode
+import com.rushit.app.data.auth.phone.PhoneNumbers
 import com.rushit.app.ui.components.GoogleSignInButton
 import com.rushit.app.ui.components.RushButton
 import com.rushit.app.ui.components.RushIcon
@@ -64,41 +77,60 @@ import com.rushit.app.ui.theme.Muted
 import com.rushit.app.ui.theme.Peach
 import com.rushit.app.ui.theme.SoftRed
 import com.rushit.app.ui.viewmodel.AuthUiState
+import com.rushit.app.ui.viewmodel.PhoneLoginUiState
 
 /**
- * RushIt's sign-in screen.
+ * RushIt's sign-in welcome screen.
  *
- * Two Firebase Authentication methods are offered — a phone one-time code (the primary action) and
- * Google — so there is no guest or sample-store shortcut: every shopping screen sits behind a real
- * account. The screen keeps the RushIt wordmark, the delivery rider, the cream and coral palette and
- * the policy links.
+ * The phone number input is displayed directly inside the welcome card.
+ * Users can enter their mobile number and tap "Continue →" to initiate Firebase Phone OTP verification,
+ * or tap "Continue with Google" for Google Credential Manager sign-in.
  */
 @Composable
 fun LoginScreen(
     authState: AuthState,
     uiState: AuthUiState,
+    phoneUiState: PhoneLoginUiState,
     errorMessage: String?,
     recoveryAction: RecoveryAction?,
     onGoogleSignIn: () -> Unit,
-    onPhoneSignIn: () -> Unit,
+    onSendCode: (CountryCode, String) -> Unit,
     onRetry: () -> Unit,
     onClearError: () -> Unit,
 ) {
+    var countryIso by rememberSaveable { mutableStateOf(PhoneNumbers.default.iso) }
+    var number by rememberSaveable { mutableStateOf("") }
+    val selectedCountry = PhoneNumbers.byIso(countryIso) ?: PhoneNumbers.default
+    var pickerOpen by remember { mutableStateOf(false) }
+
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogTitle by rememberSaveable { mutableStateOf("How can we help?") }
+    val focusManager = LocalFocusManager.current
     val largeText = LocalConfiguration.current.fontScale > 1.2f
     val compactWidth = LocalConfiguration.current.screenWidthDp < 360
 
-    // Both sources count as busy: the repository's own state and the button's in-flight flag.
     val isBusy = uiState.signingIn ||
+        phoneUiState.busy ||
         authState == AuthState.Authenticating ||
         authState == AuthState.Loading
+
+    val digits = PhoneNumbers.digitsOf(number)
+    val problem = if (digits.isEmpty()) null else PhoneNumbers.errorFor(selectedCountry, number)
+    val showProblem = problem != null && digits.length >= selectedCountry.nationalDigits.first
+    val canSend = PhoneNumbers.normalize(selectedCountry, number) != null && !isBusy
 
     fun openHelp() {
         dialogTitle = "How can we help?"
         dialog = "Sign in with your phone number or your Google account to shop, place orders and " +
             "track deliveries. RushIt never sees your Google password or the SMS code, and you can " +
             "delete your RushIt account at any time from Account settings."
+    }
+
+    fun submitPhone() {
+        focusManager.clearFocus()
+        if (canSend) {
+            onSendCode(selectedCountry, number)
+        }
     }
 
     BoxWithConstraints(
@@ -207,13 +239,127 @@ fun LoginScreen(
                             Spacer(Modifier.height(14.dp))
                         }
 
-                        // Phone OTP is the primary action: it is the only method that works on a
-                        // device without a Google account, so it gets the RushIt red button.
-                        RushButton(
-                            text = "Continue with phone number",
-                            onClick = onPhoneSignIn,
+                        // Inline Phone Number Input Field directly on welcome card
+                        Box {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 40.dp)
+                                    .clickable(enabled = !isBusy, role = Role.Button) { pickerOpen = true }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                val flagPrefix = if (selectedCountry.flag.isNotBlank()) "${selectedCountry.flag} " else ""
+                                Text(
+                                    "$flagPrefix${selectedCountry.name} (${selectedCountry.dialCode})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Ink,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "Change",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Coral,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = pickerOpen,
+                                onDismissRequest = { pickerOpen = false },
+                            ) {
+                                PhoneNumbers.countries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            val flag = if (option.flag.isNotBlank()) "${option.flag} " else ""
+                                            Text("$flag${option.name} (${option.dialCode})")
+                                        },
+                                        onClick = {
+                                            pickerOpen = false
+                                            countryIso = option.iso
+                                            onClearError()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = number,
+                            onValueChange = { typed ->
+                                onClearError()
+                                number = PhoneNumbers.nationalDigitsFor(selectedCountry, typed)
+                                    .take(PhoneNumbers.maxDigits(selectedCountry))
+                            },
+                            placeholder = { Text("Enter mobile number", color = Muted) },
+                            prefix = {
+                                val flag = if (selectedCountry.flag.isNotBlank()) "${selectedCountry.flag} " else ""
+                                Text(
+                                    "$flag${selectedCountry.dialCode} ",
+                                    color = Ink,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            },
+                            supportingText = {
+                                Text(
+                                    if (showProblem) {
+                                        problem.orEmpty()
+                                    } else {
+                                        "${selectedCountry.nationalDigits.last}-digit number without the country code."
+                                    },
+                                    color = if (showProblem) DeepRed else Muted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            },
+                            isError = showProblem,
+                            singleLine = true,
                             enabled = !isBusy,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Coral,
+                                unfocusedBorderColor = Border,
+                                focusedLabelColor = Coral,
+                                cursorColor = Coral,
+                                errorBorderColor = DeepRed,
+                                errorLabelColor = DeepRed,
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Phone,
+                                imeAction = ImeAction.Done,
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = { submitPhone() },
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
                         )
+
+                        Spacer(Modifier.height(14.dp))
+                        RushButton(
+                            text = "Continue →",
+                            onClick = { submitPhone() },
+                            enabled = canSend,
+                            loading = phoneUiState.requesting,
+                        )
+
+                        if (phoneUiState.requesting) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp),
+                                    color = Coral,
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Asking Firebase to send a code…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Muted,
+                                )
+                            }
+                        }
+
                         Spacer(Modifier.height(16.dp))
                         OrDivider()
                         Spacer(Modifier.height(16.dp))

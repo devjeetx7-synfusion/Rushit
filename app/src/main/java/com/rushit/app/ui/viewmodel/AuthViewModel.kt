@@ -63,6 +63,7 @@ data class PhoneLoginUiState(
     val verifying: Boolean = false,
     val codeSent: Boolean = false,
     val resendSecondsRemaining: Int = 0,
+    val maskedPhoneNumber: String = "",
 ) {
     val busy: Boolean get() = requesting || verifying
 }
@@ -152,7 +153,7 @@ class AuthViewModel(
             return
         }
         _error.value = null
-        _phoneState.update { it.copy(requesting = true) }
+        _phoneState.update { it.copy(requesting = true, maskedPhoneNumber = phoneNumber.masked) }
         viewModelScope.launch {
             try {
                 handlePhoneOutcome(repository.startPhoneVerification(phoneNumber))
