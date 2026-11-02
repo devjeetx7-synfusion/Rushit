@@ -207,7 +207,7 @@ fun OtpVerificationScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                "Checking your code with Firebase…",
+                                "Verifying your code…",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Muted,
                             )

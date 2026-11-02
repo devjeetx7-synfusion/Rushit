@@ -98,10 +98,8 @@ fun LoginScreen(
     onRetry: () -> Unit,
     onClearError: () -> Unit,
 ) {
-    var countryIso by rememberSaveable { mutableStateOf(PhoneNumbers.default.iso) }
+    val selectedCountry = PhoneNumbers.india
     var number by rememberSaveable { mutableStateOf("") }
-    val selectedCountry = PhoneNumbers.byIso(countryIso) ?: PhoneNumbers.default
-    var pickerOpen by remember { mutableStateOf(false) }
 
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var dialogTitle by rememberSaveable { mutableStateOf("How can we help?") }
@@ -239,52 +237,7 @@ fun LoginScreen(
                             Spacer(Modifier.height(14.dp))
                         }
 
-                        // Inline Phone Number Input Field directly on welcome card
-                        Box {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 40.dp)
-                                    .clickable(enabled = !isBusy, role = Role.Button) { pickerOpen = true }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                val flagPrefix = if (selectedCountry.flag.isNotBlank()) "${selectedCountry.flag} " else ""
-                                Text(
-                                    "$flagPrefix${selectedCountry.name} (${selectedCountry.dialCode})",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Ink,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Text(
-                                    "Change",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Coral,
-                                    modifier = Modifier.padding(start = 8.dp),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = pickerOpen,
-                                onDismissRequest = { pickerOpen = false },
-                            ) {
-                                PhoneNumbers.countries.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            val flag = if (option.flag.isNotBlank()) "${option.flag} " else ""
-                                            Text("$flag${option.name} (${option.dialCode})")
-                                        },
-                                        onClick = {
-                                            pickerOpen = false
-                                            countryIso = option.iso
-                                            onClearError()
-                                        },
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
+                        // Inline Phone Number Input Field directly on welcome card - Permanently fixed to India (+91)
                         OutlinedTextField(
                             value = number,
                             onValueChange = { typed ->
@@ -294,9 +247,8 @@ fun LoginScreen(
                             },
                             placeholder = { Text("Enter mobile number", color = Muted) },
                             prefix = {
-                                val flag = if (selectedCountry.flag.isNotBlank()) "${selectedCountry.flag} " else ""
                                 Text(
-                                    "$flag${selectedCountry.dialCode} ",
+                                    "🇮🇳  +91  |  ",
                                     color = Ink,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.SemiBold,
@@ -307,7 +259,7 @@ fun LoginScreen(
                                     if (showProblem) {
                                         problem.orEmpty()
                                     } else {
-                                        "${selectedCountry.nationalDigits.last}-digit number without the country code."
+                                        "10-digit Indian mobile number without the country code."
                                     },
                                     color = if (showProblem) DeepRed else Muted,
                                     style = MaterialTheme.typography.bodySmall,
@@ -353,7 +305,7 @@ fun LoginScreen(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "Asking Firebase to send a code…",
+                                    "Requesting verification code…",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Muted,
                                 )

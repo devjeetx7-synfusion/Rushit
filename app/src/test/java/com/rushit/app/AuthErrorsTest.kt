@@ -17,12 +17,6 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
-/**
- * Failure classification.
- *
- * Two rules are load-bearing: a genuine coroutine cancellation is rethrown rather than swallowed,
- * and no message ever contains a token, a stack trace or a transport exception's own text.
- */
 class AuthErrorsTest {
 
     @Test
@@ -36,7 +30,7 @@ class AuthErrorsTest {
     fun `connectivity failures are offline, never a credential rejection`() {
         listOf(
             IOException("socket closed"),
-            UnknownHostException("firebaseio.com"),
+            UnknownHostException("rushit.example.com"),
             ConnectException("refused"),
         ).forEach { error ->
             val failure = AuthErrors.describe(error)
@@ -66,7 +60,6 @@ class AuthErrorsTest {
 
     @Test
     fun `a timeout cancellation is reported, not rethrown`() {
-        // Produced by the library itself: TimeoutCancellationException has an internal constructor.
         val timeout = runCatching {
             runBlocking { withTimeout(1L) { delay(50L) } }
         }.exceptionOrNull()!!
@@ -95,7 +88,7 @@ class AuthErrorsTest {
             AuthErrors.UNKNOWN,
             AuthErrors.RATE_LIMITED,
             AuthErrors.USERNAME_TAKEN,
-            AuthErrors.BACKEND_NOT_AUTHORIZED,
+            AuthErrors.AUTH_BACKEND_REMOVED,
         )
         messages.forEach { message ->
             assertTrue(message.endsWith("."))

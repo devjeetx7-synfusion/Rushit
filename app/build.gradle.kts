@@ -1,33 +1,12 @@
-import groovy.json.JsonSlurper
-import java.net.URI
-import java.util.Base64
 import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
-    // Declared here so the plugin can be applied conditionally below. Applying it unconditionally
-    // would fail every build that does not have a google-services.json (CI, contributors, forks).
-    id("com.google.gms.google-services") apply false
 }
 
-// Firebase reads its project configuration from app/google-services.json. That file contains project
-// identifiers rather than secrets, but it is still environment-specific, so it is not committed:
-// supply it locally or from a CI secret. When it is absent the app still builds and runs, reports
-// itself as unconfigured on the login screen, and never pretends to sign anybody in.
-val firebaseConfigured = file("google-services.json").isFile
-// Single source of truth for the installed application id: the manifest, the Firebase registration
-// lookup below and the Gradle plugin all have to agree on it.
 val rushItApplicationId = "com.rushit.app"
-if (firebaseConfigured) {
-    apply(plugin = "com.google.gms.google-services")
-} else {
-    logger.warn(
-        "RushIt: app/google-services.json is missing, so Firebase Authentication is not configured " +
-            "for this build. Sign-in will report itself as unconfigured at runtime. See docs/AUTH_SETUP.md.",
-    )
-}
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -40,87 +19,6 @@ fun setting(name: String): String = providers.gradleProperty(name).orNull
 fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\")
     .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
 
-val supabaseUrl = setting("SUPABASE_URL").trim()
-val supabaseKey = setting("SUPABASE_ANON_KEY").trim()
-// The Web OAuth client ID is the ID-token audience. The Android OAuth client is matched by Google
-// from the package name plus the signing fingerprint, so it is never needed in this file.
-//
-// An explicit GOOGLE_WEB_CLIENT_ID always wins. When it is absent, the Web client that Firebase
-// recorded for this application in google-services.json is used instead: it is the same public value
-// the plugin already reads, so a build with only the Firebase config file can still sign in with
-// Google instead of claiming the feature is unavailable.
-val firebaseWebClientId: String = if (!firebaseConfigured) "" else runCatching {
-    val root = JsonSlurper().parseText(file("google-services.json").readText())
-    val clients = (root as? Map<*, *>)?.get("client") as? List<*> ?: return@runCatching ""
-    clients.filterIsInstance<Map<*, *>>().firstNotNullOfOrNull { client ->
-        val info = client["client_info"] as? Map<*, *> ?: return@firstNotNullOfOrNull null
-        val packageName = (info["android_client_info"] as? Map<*, *>)?.get("package_name")
-        if (packageName != rushItApplicationId) return@firstNotNullOfOrNull null
-        (client["oauth_client"] as? List<*>).orEmpty()
-            .filterIsInstance<Map<*, *>>()
-            .firstOrNull { (it["client_type"] as? Number)?.toInt() == 3 }
-            ?.get("client_id") as? String
-    }.orEmpty()
-}.getOrDefault("")
-val googleWebClientId = setting("GOOGLE_WEB_CLIENT_ID").trim().ifBlank { firebaseWebClientId }
-if (firebaseWebClientId.isNotBlank() && setting("GOOGLE_WEB_CLIENT_ID").isBlank()) {
-    logger.lifecycle(
-        "RushIt: GOOGLE_WEB_CLIENT_ID is not set; using the Web OAuth client Firebase registered " +
-            "for $rushItApplicationId in app/google-services.json.",
-    )
-}
-// A client secret has no business being in an APK: Credential Manager only needs the public client ID.
-require(setting("GOOGLE_CLIENT_SECRET").isBlank()) {
-    "Never bundle a Google OAuth client secret in the app. Only GOOGLE_WEB_CLIENT_ID is required."
-}
-listOf(
-    "SUPABASE_URL" to supabaseUrl,
-    "SUPABASE_ANON_KEY" to supabaseKey,
-    "GOOGLE_WEB_CLIENT_ID" to googleWebClientId,
-).filter { it.second.isBlank() }.forEach { (name, _) ->
-    logger.warn(
-        "RushIt: $name is not set, so sign-in and account data will report themselves as " +
-            "unconfigured at runtime. " +
-            "Set it in local.properties, a Gradle property, or the environment. See docs/AUTH_SETUP.md."
-    )
-}
-// Keep local development usable without credentials, but reject malformed or privileged values
-// whenever they are supplied. CI additionally requires all three values in its preflight step.
-require(googleWebClientId.isBlank() ||
-    Regex("^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$").matches(googleWebClientId)) {
-    "GOOGLE_WEB_CLIENT_ID must be the Web OAuth client ID ending in .apps.googleusercontent.com."
-}
-val supabaseUri = runCatching { URI(supabaseUrl) }.getOrNull()
-require(supabaseUrl.isBlank() || (
-    supabaseUri != null && supabaseUri.scheme == "https" &&
-        !supabaseUri.host.isNullOrBlank() && supabaseUri.rawUserInfo == null &&
-        supabaseUri.rawPath in listOf("", "/") &&
-        (supabaseUri.port == -1 || supabaseUri.port in 1..65535) &&
-        supabaseUri.rawQuery == null && supabaseUri.rawFragment == null &&
-        supabaseUrl.none { it.isWhitespace() || it == '\\' }
-    )) {
-    "SUPABASE_URL must be an HTTPS project origin without credentials, a path, a query or a fragment."
-}
-// Check the JWT role structurally, rather than relying on a whitespace-sensitive regex. A missing
-// or unpadded Base64URL segment is invalid. The signature is not verified with a server secret here.
-val isPublicSupabaseKey = supabaseKey.isBlank() ||
-    Regex("^sb_publishable_[A-Za-z0-9_-]+$").matches(supabaseKey) ||
-    runCatching {
-        val segments = supabaseKey.split('.')
-        require(segments.size == 3 && segments.all { it.isNotEmpty() })
-        val decoder = Base64.getUrlDecoder()
-        val header = JsonSlurper().parseText(String(decoder.decode(segments[0]), Charsets.UTF_8))
-        val payload = JsonSlurper().parseText(String(decoder.decode(segments[1]), Charsets.UTF_8))
-        header is Map<*, *> && payload is Map<*, *> && payload["role"] == "anon" &&
-            decoder.decode(segments[2]).isNotEmpty()
-    }.getOrDefault(false)
-require(isPublicSupabaseKey) {
-    "SUPABASE_ANON_KEY must be a publishable key or a legacy anon JWT. " +
-        "Never bundle a Supabase secret or service-role key."
-}
-
-// GitHub Actions supplies a monotonically increasing run number. Local builds retain version 1;
-// callers can override it with -PRUSHIT_VERSION_CODE=... or the same-named environment variable.
 val versionCodeInput = setting("RUSHIT_VERSION_CODE").trim().ifBlank { "1" }
 val ciVersionCode = versionCodeInput.toIntOrNull()
 require(Regex("^[1-9][0-9]*$").matches(versionCodeInput) &&
@@ -128,8 +26,6 @@ require(Regex("^[1-9][0-9]*$").matches(versionCodeInput) &&
     "RUSHIT_VERSION_CODE must be an integer from 1 to 2100000000 (Android's versionCode limit)."
 }
 
-// Only the file location is exported to subsequent workflow steps. Passwords and the alias stay
-// step-scoped environment secrets. Never add signing values to BuildConfig or resource files.
 val testSigningSettings = listOf(
     "RUSHIT_TEST_KEYSTORE_PATH",
     "RUSHIT_TEST_KEYSTORE_PASSWORD",
@@ -164,18 +60,10 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "SUPABASE_URL", quoted(supabaseUrl))
-        buildConfigField("String", "SUPABASE_ANON_KEY", quoted(supabaseKey))
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(googleWebClientId))
-        // Lets the app distinguish "Firebase is configured" from "this build has no
-        // google-services.json", instead of crashing inside FirebaseAuth.getInstance().
-        buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())
     }
     signingConfigs {
-        // AGP creates the debug config with the local default identity. Override it only when a
-        // complete persistent test identity is supplied; do not change release/Play signing.
         if (useStableTestSigning) {
             getByName("debug") {
                 storeFile = testKeystoreFile
@@ -218,33 +106,9 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("io.ktor:ktor-client-core:2.3.11")
-    implementation(platform("io.github.jan-tennert.supabase:bom:2.5.0"))
-    implementation("io.github.jan-tennert.supabase:gotrue-kt")
-    implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.ktor:ktor-client-android:2.3.11")
-    // supabase-kt models the bearer-token expiry with kotlinx.datetime.Instant; pinned to the version
-    // the 2.5.0 BOM was built against so SupabaseIdentityBridge and the SDK agree.
-    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
-
-    // Firebase Authentication: Google Sign-In and phone OTP. The BoM pins compatible versions of
-    // firebase-auth and its transitive artifacts (common, installations, datatransport, ...).
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    implementation("com.google.firebase:firebase-auth")
-    // `Task.await()` for FirebaseUser.getIdToken / signInWithCredential / delete.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
-
-    // Google Credential Manager sign-in. googleid supplies GetGoogleIdOption and the ID-token
-    // credential; credentials-play-services-auth bridges to Google Play services on older devices.
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("org.robolectric:robolectric:4.13")
-    // Lets the tests build real supabase-kt RestExceptions, whose message embeds request headers.
-    // That is what makes "no credential ever reaches a user-facing string" an asserted property.
-    testImplementation("io.ktor:ktor-client-mock:2.3.11")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
