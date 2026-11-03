@@ -1,12 +1,25 @@
 import java.util.Properties
 
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.gms.google-services") apply false
 }
 
 val rushItApplicationId = "com.rushit.app"
+
+val firebaseConfigured = file("google-services.json").isFile
+if (firebaseConfigured) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn(
+        "RushIt: app/google-services.json is missing, so Firebase Authentication is not configured " +
+            "for this build. Sign-in will report itself as unconfigured at runtime.",
+    )
+}
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -18,6 +31,39 @@ fun setting(name: String): String = providers.gradleProperty(name).orNull
     ?: ""
 fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\")
     .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
+
+val firebaseWebClientId = if (firebaseConfigured) {
+    runCatching {
+        val parsed = JsonSlurper().parse(file("google-services.json")) as? Map<*, *>
+        val clients = parsed?.get("client") as? List<*>
+        val rushItClient = clients?.filterIsInstance<Map<*, *>>()?.firstOrNull { client ->
+            val info = client["client_info"] as? Map<*, *>
+            val androidInfo = info?.get("android_client_info") as? Map<*, *>
+            androidInfo?.get("package_name") == rushItApplicationId
+        }
+        val oauthClients = rushItClient?.get("oauth_client") as? List<*>
+        oauthClients?.filterIsInstance<Map<*, *>>()
+            ?.firstOrNull { it["client_type"] == 3 }
+            ?.get("client_id") as? String
+    }.getOrNull()?.trim().orEmpty()
+} else ""
+
+val googleWebClientId = setting("GOOGLE_WEB_CLIENT_ID").trim().ifBlank { firebaseWebClientId }
+if (firebaseWebClientId.isNotBlank() && setting("GOOGLE_WEB_CLIENT_ID").isBlank()) {
+    logger.lifecycle(
+        "RushIt: GOOGLE_WEB_CLIENT_ID is not set; using the Web OAuth client Firebase registered " +
+            "for $rushItApplicationId in app/google-services.json.",
+    )
+}
+
+require(setting("GOOGLE_CLIENT_SECRET").isBlank()) {
+    "Never bundle a Google OAuth client secret in the app. Only GOOGLE_WEB_CLIENT_ID is required."
+}
+
+require(googleWebClientId.isBlank() ||
+    Regex("^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$").matches(googleWebClientId)) {
+    "GOOGLE_WEB_CLIENT_ID must be the Web OAuth client ID ending in .apps.googleusercontent.com."
+}
 
 val versionCodeInput = setting("RUSHIT_VERSION_CODE").trim().ifBlank { "1" }
 val ciVersionCode = versionCodeInput.toIntOrNull()
@@ -62,6 +108,8 @@ android {
 
         buildConfigField("String", "TERMS_URL", quoted(setting("RUSHIT_TERMS_URL").trim()))
         buildConfigField("String", "PRIVACY_URL", quoted(setting("RUSHIT_PRIVACY_URL").trim()))
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(googleWebClientId))
+        buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())
     }
     signingConfigs {
         if (useStableTestSigning) {
@@ -106,6 +154,16 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // Firebase Authentication: Google Sign-In and phone OTP.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    // Google Credential Manager sign-in.
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

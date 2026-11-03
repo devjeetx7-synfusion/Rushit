@@ -1,13 +1,19 @@
 package com.rushit.app
 
-import com.rushit.app.data.auth.AuthProviderId
-import com.rushit.app.data.auth.ProfileGateway
+import com.rushit.app.data.auth.AccessToken
+import com.rushit.app.data.auth.AuthGateway
+import com.rushit.app.data.auth.AuthGatewayException
 import com.rushit.app.data.auth.AuthIdentity
+import com.rushit.app.data.auth.AuthProviderId
+import com.rushit.app.data.auth.PhoneChallenge
+import com.rushit.app.data.auth.PhoneChallengeStart
 import com.rushit.app.data.model.Profile
 
 object TestConfig {
-    const val USER_A = "localUserA0000000000000001"
-    const val USER_B = "localUserB0000000000000002"
+    const val USER_A = "firebaseUidUserA0000000000000001"
+    const val USER_B = "firebaseUidUserB0000000000000002"
+    const val WEB_CLIENT_ID = "1234567890-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
+    const val TOKEN = "firebase-id-token-for-tests"
 }
 
 fun googleIdentity(
@@ -44,102 +50,107 @@ fun phoneIdentity(
 )
 
 fun completedProfile(
-    userId: String = TestConfig.USER_A,
+    uid: String = TestConfig.USER_A,
     fullName: String? = "Rush It",
     username: String? = "rushit",
     avatarUrl: String? = null,
     onboardingCompleted: Boolean = true,
 ) = Profile(
-    id = userId,
+    id = uid,
     fullName = fullName,
     username = username,
     avatarUrl = avatarUrl,
     onboardingCompleted = onboardingCompleted,
 )
 
-class FakeProfileGateway : ProfileGateway {
+class FakeAuthGateway : AuthGateway {
     override var isConfigured: Boolean = true
 
-    val profiles = mutableMapOf<String, Profile>()
-    val settings = mutableSetOf<String>()
-    val activityLog = mutableListOf<Triple<String, String, Map<String, String>>>()
-    val deleted = mutableListOf<String>()
-    val provisioned = mutableListOf<String>()
-    val savedProfiles = mutableListOf<Profile>()
-    var takenUsernames = mutableSetOf<String>()
+    var identity: AuthIdentity? = null
 
-    var findError: Throwable? = null
-    var provisionError: Throwable? = null
-    var saveError: Throwable? = null
+    var googleError: Throwable? = null
+    var tokenError: Throwable? = null
+    var startPhoneError: Throwable? = null
+    var resendError: Throwable? = null
+    var verifyError: Throwable? = null
+    var signOutError: Throwable? = null
     var deleteError: Throwable? = null
-    var usernameCheckError: Throwable? = null
 
-    override suspend fun findProfile(userId: String): Profile? {
-        findError?.let { throw it }
-        return profiles[userId]
+    var autoVerifyOnStart: Boolean = false
+
+    var accessToken: AccessToken? = AccessToken(TestConfig.TOKEN, 4_000_000_000L)
+
+    val tokenRequests = mutableListOf<Boolean>()
+    val discardedChallenges = mutableListOf<PhoneChallenge>()
+    var signOutCount = 0
+    var deleteCount = 0
+    var googleSignInCount = 0
+    var startPhoneCount = 0
+    var resendCount = 0
+    var verifyCount = 0
+
+    var lastPhoneNumber: String? = null
+    var lastCode: String? = null
+    private var challengeCounter = 0
+
+    override suspend fun awaitInitialIdentity(): AuthIdentity? = identity
+
+    override suspend fun currentIdentity(): AuthIdentity? = identity
+
+    override suspend fun signInWithGoogleIdToken(idToken: String): AuthIdentity {
+        googleSignInCount++
+        googleError?.let { throw it }
+        val id = identity ?: googleIdentity()
+        identity = id
+        return id
     }
 
-    override suspend fun provisionProfile(
-        userId: String,
-        fullName: String?,
-        avatarUrl: String?,
-    ): Profile? {
-        provisionError?.let { throw it }
-        provisioned += userId
-        val existing = profiles[userId]
-        if (existing != null) return existing
-        val created = Profile(
-            id = userId,
-            fullName = fullName,
-            avatarUrl = avatarUrl,
-            onboardingCompleted = false,
-        )
-        profiles[userId] = created
-        return created
+    override suspend fun startPhoneVerification(phoneNumberE164: String): PhoneChallengeStart {
+        startPhoneCount++
+        lastPhoneNumber = phoneNumberE164
+        startPhoneError?.let { throw it }
+        if (autoVerifyOnStart) {
+            identity = phoneIdentity()
+            return PhoneChallengeStart.AutoVerified
+        }
+        challengeCounter++
+        return PhoneChallengeStart.CodeSent(PhoneChallenge("challenge-$challengeCounter"))
     }
 
-    override suspend fun ensureSettings(userId: String) {
-        profiles[userId] ?: return
-        settings += userId
+    override suspend fun resendPhoneCode(challenge: PhoneChallenge): PhoneChallengeStart {
+        resendCount++
+        resendError?.let { throw it }
+        return PhoneChallengeStart.CodeSent(challenge)
     }
 
-    override suspend fun saveProfile(
-        userId: String,
-        fullName: String,
-        username: String?,
-        avatarUrl: String?,
-    ): Profile {
-        saveError?.let { throw it }
-        val existing = profiles[userId]
-            ?: provisionProfile(userId, fullName, avatarUrl)
-            ?: error("provisioning did not create a row")
-        val saved = existing.copy(
-            fullName = fullName,
-            username = username,
-            avatarUrl = avatarUrl,
-            onboardingCompleted = true,
-        )
-        profiles[userId] = saved
-        savedProfiles += saved
-        return saved
+    override suspend fun verifyPhoneCode(challenge: PhoneChallenge, code: String): AuthIdentity {
+        verifyCount++
+        lastCode = code
+        verifyError?.let { throw it }
+        val id = identity ?: phoneIdentity()
+        identity = id
+        return id
     }
 
-    override suspend fun usernameTaken(username: String): Boolean {
-        usernameCheckError?.let { throw it }
-        return username.lowercase() in takenUsernames
+    override suspend fun discardPhoneChallenge(challenge: PhoneChallenge) {
+        discardedChallenges += challenge
     }
 
-    override suspend fun recordActivity(
-        userId: String,
-        eventType: String,
-        metadata: Map<String, String>,
-    ) {
-        activityLog += Triple(userId, eventType, metadata)
+    override suspend fun accessToken(forceRefresh: Boolean): AccessToken? {
+        tokenRequests += forceRefresh
+        tokenError?.let { throw it }
+        return accessToken
     }
 
-    override suspend fun deleteProfile(userId: String) {
+    override suspend fun signOut() {
+        signOutCount++
+        signOutError?.let { throw it }
+        identity = null
+    }
+
+    override suspend fun deleteAccount() {
+        deleteCount++
         deleteError?.let { throw it }
-        deleted += userId
-        profiles.remove(userId)
+        identity = null
     }
 }
