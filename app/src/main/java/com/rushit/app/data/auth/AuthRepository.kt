@@ -120,13 +120,13 @@ enum class AuthFailureKind {
     /** The person dismissed the Google account picker or left the OTP screen. Never an error. */
     CANCELLED,
 
-    /** The build (or the server project) is missing Firebase, Google or Supabase configuration. */
+    /** The build is missing required configuration or backend is unavailable. */
     UNCONFIGURED,
 
     /** A credential or token was absent, malformed, expired, or issued for the wrong audience. */
     INVALID_TOKEN,
 
-    /** The device could not reach Firebase or Supabase. */
+    /** Network connectivity error. */
     NETWORK,
 
     /** The request did not complete in time. */

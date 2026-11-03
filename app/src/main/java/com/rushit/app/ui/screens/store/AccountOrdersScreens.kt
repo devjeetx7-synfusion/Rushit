@@ -318,8 +318,7 @@ fun AccountScreen(
 }
 
 /**
- * Account deletion needs an unmistakable confirmation: the person types DELETE before the request
- * goes to the server. Supabase then verifies the caller's own JWT server-side.
+ * Account deletion confirmation dialog.
  */
 @Composable
 private fun DeleteAccountDialog(busy: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
@@ -329,7 +328,7 @@ private fun DeleteAccountDialog(busy: Boolean, onDismiss: () -> Unit, onConfirm:
         title = { Text("Delete your account?", color = DeepRed) },
         text = {
             Column {
-                Text("This permanently deletes your RushIt account, profile, settings and activity history from Supabase. It cannot be undone, and your device-local demo orders will be cleared too.")
+                Text("This permanently resets your local RushIt profile, settings and demo orders. It cannot be undone.")
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = confirmation,
@@ -368,7 +367,7 @@ private fun AccountAvatar(avatarUrl: String?, displayName: String?) {
 
 private const val DELETE_CONFIRMATION_WORD = "DELETE"
 
-/** Formats the Supabase account creation time in the device locale. */
+/** Formats the account creation time in the device locale. */
 internal fun formatMemberSince(epochSeconds: Long): String =
     SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(epochSeconds * 1000L))
 

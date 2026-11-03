@@ -85,7 +85,7 @@ private const val USERNAME_CHECK_DEBOUNCE_MILLIS = 450L
  * Google's name and photo arrive as *suggestions*; anything already saved in `profiles` wins, so
  * signing in again never overwrites a customization.
  *
- * Interrupted onboarding is safe: `onboarding_completed` stays false in Supabase, so the next launch
+ * Interrupted onboarding is safe: `onboarding_completed` stays false, so the next launch
  * routes back here with whatever was already saved pre-filled.
  */
 @Composable

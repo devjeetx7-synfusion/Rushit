@@ -3,7 +3,7 @@ package com.rushit.app.data.auth.phone
 import java.util.Locale
 
 /**
- * Rules for the Firebase SMS one-time code and the resend countdown.
+ * Rules for the SMS one-time code and the resend countdown.
  *
  * Firebase issues six-digit codes, so the UI only enables verification once six digits are present
  * and never asks Firebase to check a partial code. Everything here is pure Kotlin, which keeps the
@@ -11,7 +11,7 @@ import java.util.Locale
  */
 object VerificationCode {
 
-    /** Digits in a Firebase SMS code. */
+    /** Digits in a 6-digit SMS code. */
     const val LENGTH = 6
 
     /** Digits only, capped at [LENGTH]. Pasted codes with spaces, dashes or a leading label survive. */

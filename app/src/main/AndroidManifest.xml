@@ -1,21 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Firebase Authentication and Supabase data access are both network calls. -->
+    <!-- Internet permission for network image loading and future connectivity -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Requested only when a user explicitly chooses to attach their current location. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!--
-        No authentication deep link, redirect URI or browser query is declared any more: Google
-        sign-in completes in-process through Credential Manager and Firebase, and phone verification
-        completes through a Firebase callback. RushIt never opens a browser to sign in, so it needs no
-        <queries> entry for Custom Tabs and no rushit:// intent filter.
-
-        Firebase's phone verification uses Google Play services' app verification (Play Integrity, with
-        reCAPTCHA fallback). That needs no extra permission here: RushIt does not read SMS itself, so
-        RECEIVE_SMS / READ_SMS are deliberately absent, and code auto-retrieval is a bonus rather than a
-        requirement (manual entry always works).
-    -->
 
     <application
         android:name=".RushItApplication"

@@ -81,7 +81,7 @@ class ProfileOnboardingTest {
     fun `new profile values carry provider hints but never complete onboarding`() {
         val values = ProfileOnboarding.newProfileValues(googleIdentity(uid = TestConfig.USER_A, fullName = "Google Name"))
 
-        assertEquals(TestConfig.USER_A, values.firebaseUid)
+        assertEquals(TestConfig.USER_A, values.userId)
         assertEquals("Google Name", values.fullName)
         assertEquals("https://lh3.googleusercontent.com/a/photo", values.avatarUrl)
     }

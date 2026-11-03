@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  # Only so a failed build can leave its compiler output on the pull request. Actions logs and
-  # artifacts require signed-in web access to download, which makes a red run hard to diagnose.
   pull-requests: write
 
 jobs:
@@ -18,7 +16,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      # New runs of this workflow receive increasing numbers; a re-run keeps its original number.
       RUSHIT_VERSION_CODE: ${{ github.run_number }}
     steps:
       - name: Check out the selected ref
@@ -38,103 +35,20 @@ jobs:
           cmdline-tools-version: '12266719'
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
-      - name: Validate Google, Supabase and CI version configuration
+      - name: Validate CI version configuration
         shell: bash
-        env:
-          # Public client configuration only. Never add OAuth/client or Supabase server secrets.
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
-          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64
-          import ipaddress
-          import json
           import os
           import re
           import sys
-          from urllib.parse import urlsplit
-
-          errors = []
-          values = {}
-          for name in ("GOOGLE_WEB_CLIENT_ID", "SUPABASE_URL", "SUPABASE_ANON_KEY"):
-              value = os.environ.get(name, "").strip()
-              values[name] = value
-              if not value:
-                  errors.append(f"{name} is missing. Set it in GitHub Actions repository Variables.")
-
-          client_id = values["GOOGLE_WEB_CLIENT_ID"]
-          if client_id and not re.fullmatch(r"[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com", client_id):
-              errors.append("GOOGLE_WEB_CLIENT_ID must be the Web application OAuth client ID ending in .apps.googleusercontent.com, not an Android client ID or a client secret.")
-
-          url = values["SUPABASE_URL"]
-          if url:
-              try:
-                  parsed = urlsplit(url)
-                  hostname = parsed.hostname or ""
-                  try:
-                      ipaddress.ip_address(hostname)
-                      valid_host = True
-                  except ValueError:
-                      valid_host = len(hostname) <= 253 and all(
-                          re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
-                          for label in hostname.split(".")
-                      )
-                  valid_url = (
-                      parsed.scheme == "https" and valid_host
-                      and parsed.username is None and parsed.password is None
-                      and parsed.query == "" and parsed.fragment == ""
-                      and "?" not in url and "#" not in url
-                      and parsed.path in ("", "/")
-                      and not any(c.isspace() or c == "\\" for c in url)
-                  )
-                  # Accessing port also rejects non-numeric and out-of-range ports.
-                  if parsed.port is not None and not 1 <= parsed.port <= 65535:
-                      valid_url = False
-              except ValueError:
-                  valid_url = False
-              if not valid_url:
-                  errors.append("SUPABASE_URL must be an HTTPS Supabase project origin, for example https://PROJECT.supabase.co, without credentials, a path, a query or a fragment.")
-
-          key = values["SUPABASE_ANON_KEY"]
-          if key:
-              public_key = bool(re.fullmatch(r"sb_publishable_[A-Za-z0-9_-]+", key))
-              if not public_key:
-                  try:
-                      segments = key.split(".")
-                      if len(segments) != 3 or not all(
-                          re.fullmatch(r"[A-Za-z0-9_-]+", segment) and len(segment) % 4 != 1
-                          for segment in segments
-                      ):
-                          raise ValueError("Invalid JWT")
-                      def decode(segment):
-                          return base64.b64decode(
-                              segment.translate(str.maketrans("-_", "+/")) + "=" * (-len(segment) % 4),
-                              validate=True,
-                          )
-                      header = json.loads(decode(segments[0]))
-                      payload = json.loads(decode(segments[1]))
-                      if not decode(segments[2]):
-                          raise ValueError("Empty JWT signature")
-                      public_key = (
-                          isinstance(header, dict) and isinstance(payload, dict)
-                          and payload.get("role") == "anon"
-                      )
-                  except (ValueError, TypeError, UnicodeError):
-                      public_key = False
-              if not public_key:
-                  errors.append("SUPABASE_ANON_KEY must be an sb_publishable_... key or a valid legacy JWT with role=anon. Secret/service-role keys are forbidden in the APK.")
 
           version = os.environ.get("RUSHIT_VERSION_CODE", "")
           if not re.fullmatch(r"[1-9][0-9]*", version) or not 1 <= int(version or 0) <= 2100000000:
-              errors.append("RUSHIT_VERSION_CODE must be a positive integer no greater than 2100000000; CI supplies github.run_number.")
-
-          if errors:
-              for error in errors:
-                  print(f"::error::{error}")
+              print("::error::RUSHIT_VERSION_CODE must be a positive integer no greater than 2100000000; CI supplies github.run_number.")
               sys.exit(1)
-          print("Google/Supabase public configuration and CI versionCode passed preflight validation.")
+          print("CI versionCode passed preflight validation.")
           PY
 
       - name: Prepare persistent test signing when configured
@@ -148,37 +62,26 @@ jobs:
           set -euo pipefail
           set +x
           if [[ -z "${RUSHIT_TEST_KEYSTORE_BASE64:-}" ]]; then
-            echo "::warning::Persistent test keystore is missing. The APK will use this runner's ephemeral default debug signing identity and may not update the previously installed build. Configure all four RUSHIT_TEST_* signing secrets for stable updates."
-            # A partial configuration must not silently fall back to a different identity.
-            if [[ -n "${RUSHIT_TEST_KEYSTORE_PASSWORD:-}${RUSHIT_TEST_KEY_ALIAS:-}${RUSHIT_TEST_KEY_PASSWORD:-}" ]]; then
-              echo "::error::RUSHIT_TEST_KEYSTORE_BASE64 is missing while other test-signing secrets are set. Configure all four signing secrets."
-              exit 1
-            fi
+            echo "Persistent test signing Secrets are not set. Building with the runner's ephemeral debug key."
             exit 0
           fi
           missing=()
-          for name in RUSHIT_TEST_KEYSTORE_PASSWORD RUSHIT_TEST_KEY_ALIAS RUSHIT_TEST_KEY_PASSWORD; do
-            if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
-          done
-          if (( ${#missing[@]} )); then
-            echo "::error::Incomplete test signing configuration; missing: ${missing[*]}."
+          [[ -z "${RUSHIT_TEST_KEYSTORE_PASSWORD:-}" ]] && missing+=("RUSHIT_TEST_KEYSTORE_PASSWORD")
+          [[ -z "${RUSHIT_TEST_KEY_ALIAS:-}" ]] && missing+=("RUSHIT_TEST_KEY_ALIAS")
+          [[ -z "${RUSHIT_TEST_KEY_PASSWORD:-}" ]] && missing+=("RUSHIT_TEST_KEY_PASSWORD")
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Incomplete persistent test signing configuration. Set all of: ${missing[*]}."
             exit 1
           fi
-
-          # Only this step receives the Base64 secret. The decoded file is never in the checkout,
-          # Gradle project cache, uploaded artifacts or failure comments. Do not enable shell tracing.
           umask 077
           signing_dir="$(mktemp -d "$RUNNER_TEMP/rushit-test-signing.XXXXXXXX")"
           keystore_path="$signing_dir/rushit-test.p12"
-          # Export only the path, never credentials, through GITHUB_ENV. Publish it before
-          # validation so the always-run cleanup also removes a malformed temporary keystore.
           printf 'RUSHIT_TEST_KEYSTORE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
           if ! python3 - "$keystore_path" <<'PY'
           import base64
           import os
           import sys
           try:
-              # Accept wrapped Base64 from platform tools, but reject non-Base64 characters.
               encoded = "".join(os.environ["RUSHIT_TEST_KEYSTORE_BASE64"].split())
               decoded = base64.b64decode(encoded, validate=True)
               if not decoded:
@@ -186,7 +89,6 @@ jobs:
               with open(sys.argv[1], "xb") as output:
                   output.write(decoded)
           except (ValueError, OSError, KeyError):
-              # Exception text can contain input; deliberately do not print it.
               sys.exit(1)
           PY
           then
@@ -201,69 +103,20 @@ jobs:
           fi
           echo "Persistent test keystore validated in RUNNER_TEMP; signing credentials are not logged."
 
-      - name: Provide Firebase configuration when available
-        shell: bash
-        env:
-          # google-services.json is not a secret (project id, api key and client ids are public), but
-          # it is project-specific, so it is supplied here instead of being committed. Either a
-          # repository variable or a secret works; the secret wins because it reliably carries
-          # multi-line values.
-          GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
-          GOOGLE_SERVICES_JSON_VAR: ${{ vars.GOOGLE_SERVICES_JSON }}
-        run: |
-          set -euo pipefail
-          set +x
-          google_services_json="${GOOGLE_SERVICES_JSON_SECRET:-${GOOGLE_SERVICES_JSON_VAR:-}}"
-          if [[ -z "$google_services_json" ]]; then
-            # The build applies the google-services plugin only when this file exists, so a build
-            # without it is still valid: Firebase Authentication reports "not configured" in the app
-            # instead of crashing, and every unit test still runs.
-            echo "::warning::No GOOGLE_SERVICES_JSON variable or secret is set. Building without Firebase: Google and phone sign-in will report that this build is not configured."
-            exit 0
-          fi
-          umask 077
-          printf '%s' "$google_services_json" > app/google-services.json
-          if ! python3 - <<'PY'
-          import json
-          import sys
-          try:
-              with open('app/google-services.json', encoding='utf-8') as handle:
-                  config = json.load(handle)
-          except (OSError, ValueError):
-              sys.exit(1)
-          # Only assert the shape needed by the Gradle plugin; never print the file.
-          project = config.get('project_info', {}).get('project_id', '')
-          sys.exit(0 if project else 1)
-          PY
-          then
-            echo "::error::The supplied google-services.json is not valid (no project_info.project_id)."
-            rm -f app/google-services.json
-            exit 1
-          fi
-          echo "google-services.json written from the configured CI variable or secret."
-
       - name: Run unit tests and build the signed debug APK
         shell: bash
         env:
-          # These public values are bundled in the APK; never use privileged credentials.
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
           RUSHIT_TERMS_URL: ${{ vars.RUSHIT_TERMS_URL }}
           RUSHIT_PRIVACY_URL: ${{ vars.RUSHIT_PRIVACY_URL }}
-          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
           RUSHIT_TEST_KEYSTORE_PASSWORD: ${{ secrets.RUSHIT_TEST_KEYSTORE_PASSWORD }}
           RUSHIT_TEST_KEY_ALIAS: ${{ secrets.RUSHIT_TEST_KEY_ALIAS }}
           RUSHIT_TEST_KEY_PASSWORD: ${{ secrets.RUSHIT_TEST_KEY_PASSWORD }}
         run: |
           set -uo pipefail
           set +x
-          # Google Sign-In and Firebase phone OTP are the only authentication methods, so the auth unit
-          # tests must pass before an APK is produced. They run on the JVM: no emulator, no signing
-          # keys, no network, and no real SMS (Firebase test phone numbers are used manually).
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain \
             2>&1 | tee "$RUNNER_TEMP/build.log"
           result="${PIPESTATUS[0]}"
-          # Publish only aggregate test counts, never test logs that could contain fixture values.
           python3 - <<'PY'
           import glob
           import os
@@ -283,7 +136,6 @@ jobs:
         shell: bash
         env:
           APK_PATH: app/build/outputs/apk/debug/app-debug.apk
-          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           if [[ ! -s "$APK_PATH" ]]; then
@@ -315,34 +167,6 @@ jobs:
             exit 1
           fi
 
-          # Inspect the generated constant as well as the packaged DEX strings. This catches a
-          # wiring mistake without decompiling or logging any Supabase key or signing material.
-          if ! python3 - "$APK_PATH" <<'PY'
-          import os
-          from pathlib import Path
-          import re
-          import sys
-          import zipfile
-          expected = os.environ["GOOGLE_WEB_CLIENT_ID"].strip()
-          source = Path("app/build/generated/source/buildConfig/debug/com/rushit/app/BuildConfig.java")
-          try:
-              match = re.search(r'String GOOGLE_WEB_CLIENT_ID = "([^"]*)";', source.read_text())
-              constant_matches = match is not None and match.group(1) == expected
-              with zipfile.ZipFile(sys.argv[1]) as apk:
-                  dex_names = [name for name in apk.namelist() if re.fullmatch(r"classes[0-9]*\.dex", name)]
-                  packaged = any(expected.encode("utf-8") in apk.read(name) for name in dex_names)
-              if not constant_matches or not packaged:
-                  sys.exit(1)
-          except (OSError, KeyError, zipfile.BadZipFile):
-              sys.exit(1)
-          PY
-          then
-            echo "::error::The APK does not contain the configured GOOGLE_WEB_CLIENT_ID in its generated BuildConfig and DEX."
-            exit 1
-          fi
-
-          # The old flow opened a Custom Tab and came back through rushit://auth/callback. That deep
-          # link must stay gone: its presence would mean a browser sign-in path was reintroduced.
           manifest_xml="$("$aapt" dump xmltree "$APK_PATH" AndroidManifest.xml)"
           if printf '%s\n' "$manifest_xml" | grep -q 'android:scheme.*"rushit"'; then
             echo "::error::The APK still declares the retired rushit:// authentication deep link."
@@ -352,46 +176,25 @@ jobs:
             echo "::error::The APK still declares an authentication host in its manifest."
             exit 1
           fi
+
+          # Verify that backend classes from Firebase and Supabase have been completely removed
           if ! python3 - "$APK_PATH" <<'PY'
           import re, sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as apk:
               dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
-          required = [
-              # Google sign-in path: Credential Manager, never the deprecated GoogleSignIn client.
-              b'Landroidx/credentials/CredentialManager;',
-              b'Lcom/google/android/libraries/identity/googleid/GetGoogleIdOption;',
-              b'Lcom/rushit/app/data/auth/google/GoogleSignInCoordinator;',
-              # Firebase Authentication is the identity provider for both Google and phone sign-in.
-              b'Lcom/google/firebase/auth/FirebaseAuth;',
-              b'Lcom/rushit/app/data/auth/firebase/FirebaseAuthGateway;',
-              b'Lcom/rushit/app/data/auth/FirebaseAuthRepository;',
-              # The Supabase client is still shipped: it owns the database, not the identity.
-              b'Lio/github/jan/supabase/SupabaseClient;',
-          ]
-          sys.exit(0 if all(marker in dex for marker in required) else 1)
-          PY
-          then
-            echo "::error::The APK is missing Credential Manager, Firebase Authentication or Supabase data classes."
-            exit 1
-          fi
-          if ! python3 - "$APK_PATH" <<'PY'
-          import re, sys, zipfile
-          with zipfile.ZipFile(sys.argv[1]) as apk:
-              dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
-          # Classes from the retired browser flow. Any of these means an old auth path came back.
           forbidden = [
-              b'Lcom/rushit/app/data/auth/google/SupabaseOAuthRedirect;',
-              b'Lcom/rushit/app/data/auth/google/SupabaseBrowserSignIn;',
+              b'Lcom/google/firebase/auth/FirebaseAuth;',
+              b'Lio/github/jan/supabase/SupabaseClient;',
+              b'Lcom/rushit/app/data/auth/firebase/FirebaseAuthGateway;',
+              b'Lcom/rushit/app/data/auth/supabase/SupabaseIdentityBridge;',
           ]
           sys.exit(0 if not any(marker in dex for marker in forbidden) else 1)
           PY
           then
-            echo "::error::The APK still packages the retired Supabase browser OAuth classes."
+            echo "::error::The APK still packages removed Firebase or Supabase backend classes."
             exit 1
           fi
 
-          # apksigner prints public certificate details only. Capture first so a failed command
-          # cannot accidentally contribute keystore passwords or other diagnostics to the log.
           if ! verification="$("$apksigner" verify --verbose --print-certs --min-sdk-version 24 "$APK_PATH" 2>&1)"; then
             echo "::error::APK signature verification failed. No APK artifact will be uploaded."
             exit 1
@@ -402,8 +205,8 @@ jobs:
             echo "::error::Could not read exactly one signing certificate's SHA-1 and SHA-256 fingerprints."
             exit 1
           fi
-          echo "Verified com.rushit.app test APK with versionCode $version_code and configured Google Web Client ID."
-          echo "::notice::APK verified: com.rushit.app, versionCode $version_code; Google Web Client ID, Credential Manager, Firebase Authentication packaged; browser OAuth and rushit://auth/callback absent; signature valid."
+          echo "Verified com.rushit.app test APK with versionCode $version_code."
+          echo "::notice::APK verified: com.rushit.app, versionCode $version_code; signature valid."
           printf '%s\n' "$verification" | grep -E '^(Verifies|Verified using v[1234] scheme)'
           echo "Signing certificate SHA-1: ${sha1,,}"
           echo "Signing certificate SHA-256: ${sha256,,}"
@@ -425,7 +228,6 @@ jobs:
           keystore_path="${RUSHIT_TEST_KEYSTORE_PATH:-}"
           if [[ -n "$keystore_path" ]]; then
             signing_dir="${keystore_path%/*}"
-            # Delete only the two files created by this workflow, never a recursive/wildcard path.
             if [[ "$signing_dir" == "$RUNNER_TEMP"/rushit-test-signing.???????? &&
                   "${keystore_path##*/}" == 'rushit-test.p12' ]]; then
               rm -f -- "$signing_dir/rushit-test.p12" "$signing_dir/keystore-error.log"
@@ -452,8 +254,6 @@ jobs:
             else
               printf 'No Gradle log was produced; the step failed before Gradle ran.\n'
             fi
-            # An assertion failure only appears in the XML report, and assertTrue carries no
-            # message, so the stack trace is the only way to tell which line failed.
             printf '\n'
             python3 - <<'PYEOF'
           import glob
