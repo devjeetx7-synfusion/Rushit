@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        app.foregroundActivityTracker.bind(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Cream.toArgb()
         window.navigationBarColor = if (Build.VERSION.SDK_INT >= 26) Cream.toArgb() else Ink.toArgb()
