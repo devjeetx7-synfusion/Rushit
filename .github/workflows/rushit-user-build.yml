@@ -177,21 +177,41 @@ jobs:
             exit 1
           fi
 
-          # Verify that backend classes from Firebase and Supabase have been completely removed
+          if ! python3 - "$APK_PATH" <<'PY'
+          import re, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
+          required = [
+              # Google sign-in path: Credential Manager, never the deprecated GoogleSignIn client.
+              b'Landroidx/credentials/CredentialManager;',
+              b'Lcom/google/android/libraries/identity/googleid/GetGoogleIdOption;',
+              b'Lcom/rushit/app/data/auth/google/GoogleSignInCoordinator;',
+              # Firebase Authentication is the identity provider for both Google and phone sign-in.
+              b'Lcom/google/firebase/auth/FirebaseAuth;',
+              b'Lcom/rushit/app/data/auth/firebase/FirebaseAuthGateway;',
+              b'Lcom/rushit/app/data/auth/FirebaseAuthRepository;',
+          ]
+          sys.exit(0 if all(marker in dex for marker in required) else 1)
+          PY
+          then
+            echo "::error::The APK is missing Credential Manager or Firebase Authentication classes."
+            exit 1
+          fi
+
           if ! python3 - "$APK_PATH" <<'PY'
           import re, sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as apk:
               dex = b''.join(apk.read(n) for n in apk.namelist() if re.fullmatch(r'classes[0-9]*\.dex', n))
           forbidden = [
-              b'Lcom/google/firebase/auth/FirebaseAuth;',
               b'Lio/github/jan/supabase/SupabaseClient;',
-              b'Lcom/rushit/app/data/auth/firebase/FirebaseAuthGateway;',
               b'Lcom/rushit/app/data/auth/supabase/SupabaseIdentityBridge;',
+              b'Lcom/rushit/app/data/auth/google/SupabaseOAuthRedirect;',
+              b'Lcom/rushit/app/data/auth/google/SupabaseBrowserSignIn;',
           ]
           sys.exit(0 if not any(marker in dex for marker in forbidden) else 1)
           PY
           then
-            echo "::error::The APK still packages removed Firebase or Supabase backend classes."
+            echo "::error::The APK still packages retired Supabase classes."
             exit 1
           fi
 
