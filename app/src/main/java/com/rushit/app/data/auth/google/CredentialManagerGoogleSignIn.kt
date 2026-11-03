@@ -21,16 +21,14 @@ class CredentialManagerGoogleSignIn(
     override suspend fun requestGoogleIdToken(): GoogleSignInOutcome {
         if (webClientId.isBlank()) return GoogleSignInOutcome.Unconfigured
         return GoogleCredentialRequest(webClientId) { spec ->
-            val activity = foregroundActivity(activityProvider)
+            val activity = activeActivity(activityProvider)
                 ?: return@GoogleCredentialRequest noActivity()
-            googleCredentialRequest(spec).let { request ->
-                getCredential(activity, request).also {
-                    // Do not accept a late response through a destroyed host after recreation.
-                    if (foregroundActivity(activityProvider) !== activity) {
-                        return@GoogleCredentialRequest noActivity()
-                    }
-                }
+            val request = googleCredentialRequest(spec)
+            val response = getCredential(activity, request)
+            if (activity.isFinishing || activity.isDestroyed) {
+                return@GoogleCredentialRequest noActivity()
             }
+            response
         }.execute()
     }
 
@@ -39,10 +37,10 @@ class CredentialManagerGoogleSignIn(
     internal class NoForegroundActivityException : Exception(GoogleSignInMessages.NO_ACTIVITY)
 }
 
-/** Resolves the current resumed host, or null when none can legitimately receive a result. */
-internal fun foregroundActivity(provider: () -> Activity?): Activity? =
+/** Resolves the current visible or started host, or null when none can legitimately receive a result. */
+internal fun activeActivity(provider: () -> Activity?): Activity? =
     provider()?.takeIf {
         !it.isFinishing && !it.isDestroyed &&
             (it as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
-                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true
+                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) == true
     }

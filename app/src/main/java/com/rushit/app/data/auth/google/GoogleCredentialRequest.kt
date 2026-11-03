@@ -4,6 +4,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 
@@ -22,12 +23,29 @@ internal data class GoogleIdRequestSpec(
  */
 internal fun googleCredentialRequest(spec: GoogleIdRequestSpec): GetCredentialRequest {
     require(spec.webClientId.isNotBlank())
-    val option = GetGoogleIdOption.Builder()
-        .setServerClientId(spec.webClientId)
-        .setFilterByAuthorizedAccounts(spec.authorizedAccountsOnly)
-        .setAutoSelectEnabled(spec.authorizedAccountsOnly)
-        .build()
-    return GetCredentialRequest.Builder().addCredentialOption(option).build()
+    val builder = GetCredentialRequest.Builder()
+    if (spec.authorizedAccountsOnly) {
+        val option = GetGoogleIdOption.Builder()
+            .setServerClientId(spec.webClientId)
+            .setFilterByAuthorizedAccounts(true)
+            .setAutoSelectEnabled(true)
+            .build()
+        builder.addCredentialOption(option)
+    } else {
+        // Stage 2 (button flow / unrestricted account chooser):
+        // According to official Google Identity documentation and issue tracker 341690734,
+        // GetSignInWithGoogleOption prevents TransactionTooLargeException on Android 14+ / Android 16
+        // when multiple Google accounts are present on the device.
+        val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(spec.webClientId).build()
+        val unrestrictedGoogleIdOption = GetGoogleIdOption.Builder()
+            .setServerClientId(spec.webClientId)
+            .setFilterByAuthorizedAccounts(false)
+            .setAutoSelectEnabled(false)
+            .build()
+        builder.addCredentialOption(signInWithGoogleOption)
+        builder.addCredentialOption(unrestrictedGoogleIdOption)
+    }
+    return builder.build()
 }
 
 /**

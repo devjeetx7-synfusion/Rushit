@@ -75,6 +75,21 @@ class FirebaseAuthErrorsTest {
     }
 
     @Test
+    fun `operation not allowed clarifies provider configuration`() {
+        val generic = FirebaseAuthErrors.forCode("ERROR_OPERATION_NOT_ALLOWED")
+        assertEquals(AuthFailureKind.UNCONFIGURED, generic.kind)
+        assertEquals(FirebaseAuthMessages.OPERATION_NOT_ALLOWED, generic.message)
+
+        val phone = FirebaseAuthErrors.forCode("ERROR_OPERATION_NOT_ALLOWED", "Phone provider disabled")
+        assertEquals(AuthFailureKind.UNCONFIGURED, phone.kind)
+        assertEquals(FirebaseAuthMessages.PHONE_PROVIDER_DISABLED, phone.message)
+
+        val google = FirebaseAuthErrors.forCode("ERROR_OPERATION_NOT_ALLOWED", "Google provider disabled")
+        assertEquals(AuthFailureKind.UNCONFIGURED, google.kind)
+        assertEquals(FirebaseAuthMessages.GOOGLE_PROVIDER_DISABLED, google.message)
+    }
+
+    @Test
     fun `an unknown code never leaks the code itself`() {
         val failure = FirebaseAuthErrors.forCode("ERROR_SOMETHING_NEW_FOR_2026")
         assertEquals(FirebaseAuthMessages.UNKNOWN, failure.message)

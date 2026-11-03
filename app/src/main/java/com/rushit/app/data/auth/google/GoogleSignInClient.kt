@@ -1,7 +1,9 @@
 package com.rushit.app.data.auth.google
 
+import android.util.Log
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialResponse
+import com.rushit.app.BuildConfig
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
@@ -77,22 +79,27 @@ internal fun googleOutcomeFrom(response: GetCredentialResponse): GoogleSignInOut
 }
 
 /** Keep transport internals out of UI messages. */
-internal fun classifyGoogleSignInFailure(error: Throwable): GoogleSignInOutcome = when (error) {
-    is CredentialManagerGoogleSignIn.NoForegroundActivityException ->
-        GoogleSignInOutcome.Failed(GoogleSignInMessages.NO_ACTIVITY)
+internal fun classifyGoogleSignInFailure(error: Throwable): GoogleSignInOutcome {
+    if (BuildConfig.DEBUG && error !is GetCredentialCancellationException) {
+        Log.w("RushItAuth", "Google Sign-In failed: ${error.javaClass.simpleName}: ${error.message}")
+    }
+    return when (error) {
+        is CredentialManagerGoogleSignIn.NoForegroundActivityException ->
+            GoogleSignInOutcome.Failed(GoogleSignInMessages.NO_ACTIVITY)
 
-    is GetCredentialCancellationException -> GoogleSignInOutcome.Cancelled
-    is NoCredentialException -> GoogleSignInOutcome.NoCredentialAvailable
+        is GetCredentialCancellationException -> GoogleSignInOutcome.Cancelled
+        is NoCredentialException -> GoogleSignInOutcome.NoCredentialAvailable
 
-    is GetCredentialUnsupportedException,
-    is GetCredentialProviderConfigurationException,
-    -> GoogleSignInOutcome.Unsupported
+        is GetCredentialUnsupportedException,
+        is GetCredentialProviderConfigurationException,
+        -> GoogleSignInOutcome.Unsupported
 
-    is IOException -> GoogleSignInOutcome.Failed(GoogleSignInMessages.OFFLINE, offline = true)
+        is IOException -> GoogleSignInOutcome.Failed(GoogleSignInMessages.OFFLINE, offline = true)
 
-    is GetCredentialUnknownException,
-    is GetCredentialException,
-    -> GoogleSignInOutcome.Failed(GoogleSignInMessages.UNKNOWN)
+        is GetCredentialUnknownException,
+        is GetCredentialException,
+        -> GoogleSignInOutcome.Failed(GoogleSignInMessages.UNKNOWN)
 
-    else -> GoogleSignInOutcome.Failed(GoogleSignInMessages.UNKNOWN)
+        else -> GoogleSignInOutcome.Failed(GoogleSignInMessages.UNKNOWN)
+    }
 }

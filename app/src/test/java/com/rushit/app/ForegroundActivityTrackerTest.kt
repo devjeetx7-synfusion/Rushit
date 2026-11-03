@@ -22,15 +22,20 @@ class ForegroundActivityTrackerTest {
         assertSame(first, tracker.activity)
 
         firstController.pause()
+        // When paused (e.g. system dialog or Credential Manager picker displayed), the host is still STARTED and valid
+        assertSame("paused activity must remain valid while Credential Manager dialog is shown", first, tracker.activity)
+
+        firstController.stop()
         assertNull(tracker.activity)
+
         val secondController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val second = secondController.get()
         tracker.bind(second)
         assertSame(second, tracker.activity)
 
-        firstController.stop().destroy()
+        firstController.destroy()
         assertSame("destroying the old Activity must not clear the new host", second, tracker.activity)
-        secondController.pause().stop().destroy()
+        secondController.stop().destroy()
         assertNull(tracker.activity)
     }
 
@@ -39,9 +44,9 @@ class ForegroundActivityTrackerTest {
         val tracker = ForegroundActivityTracker()
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         tracker.bind(controller.get())
-        controller.pause()
+        controller.stop()
         assertNull(tracker.activity)
-        controller.resume()
+        controller.restart().start().resume()
         assertSame(controller.get(), tracker.activity)
     }
 }
