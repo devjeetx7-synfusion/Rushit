@@ -82,10 +82,22 @@ class GoogleSignInCoordinatorTest {
     }
 
     @Test
+    fun `a paused host during credential selection remains valid`() = runTest {
+        val pausedActivity = Robolectric.buildActivity(ComponentActivity::class.java).setup().pause().get()
+        val client = CredentialManagerGoogleSignIn({ pausedActivity }, clientId) { _, _ ->
+            success("paused-token")
+        }
+
+        val outcome = client.requestGoogleIdToken()
+        assertEquals(GoogleSignInOutcome.Success("paused-token"), outcome)
+    }
+
+    @Test
     fun `a credential that arrives after host is destroyed is discarded`() = runTest {
-        var current: ComponentActivity? = activity
-        val client = CredentialManagerGoogleSignIn({ current }, clientId) { _, _ ->
-            current = null
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val host = controller.get()
+        val client = CredentialManagerGoogleSignIn({ host }, clientId) { _, _ ->
+            controller.destroy()
             success("late-token")
         }
 

@@ -1,6 +1,7 @@
 package com.rushit.app.data.auth.firebase
 
 import android.app.Activity
+import android.util.Log
 import com.google.firebase.FirebaseException
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
@@ -10,6 +11,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
+import com.rushit.app.BuildConfig
 import com.rushit.app.data.auth.AccessToken
 import com.rushit.app.data.auth.AuthFailure
 import com.rushit.app.data.auth.AuthFailureKind
@@ -175,6 +177,12 @@ class FirebaseAuthGateway(
                     }
 
                     override fun onVerificationFailed(exception: FirebaseException) {
+                        if (BuildConfig.DEBUG) {
+                            Log.w(
+                                "RushItAuth",
+                                "Phone verification failed: ${exception.javaClass.simpleName}: ${exception.message}",
+                            )
+                        }
                         if (!continuation.isActive) return
                         continuation.resumeWithException(
                             AuthGatewayException(failureFor(exception)),
@@ -257,8 +265,14 @@ class FirebaseAuthGateway(
     private suspend fun <T> guarded(block: suspend () -> T): T = try {
         block()
     } catch (error: AuthGatewayException) {
+        if (BuildConfig.DEBUG) {
+            Log.w("RushItAuth", "AuthGatewayException: ${error.failure.kind}: ${error.failure.message}")
+        }
         throw error
     } catch (error: FirebaseException) {
+        if (BuildConfig.DEBUG) {
+            Log.w("RushItAuth", "FirebaseException: ${error.javaClass.simpleName}: ${error.message}")
+        }
         throw AuthGatewayException(failureFor(error))
     }
 

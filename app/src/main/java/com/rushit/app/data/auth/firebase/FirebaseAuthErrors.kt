@@ -32,7 +32,11 @@ object FirebaseAuthMessages {
         "For your security, please sign in again before deleting your account."
     const val USER_DISABLED = "This account is not allowed to sign in to RushIt."
     const val OPERATION_NOT_ALLOWED =
-        "This sign-in method is not enabled for the RushIt Firebase project yet."
+        "This sign-in method is not enabled for the RushIt Firebase project yet. Verify in the Firebase Console that the provider and SMS regions (India +91) are enabled."
+    const val PHONE_PROVIDER_DISABLED =
+        "Phone sign-in is not enabled for the RushIt Firebase project yet. Enable the Phone provider and allow SMS to India (+91) in the Firebase Console."
+    const val GOOGLE_PROVIDER_DISABLED =
+        "Google sign-in is not enabled for the RushIt Firebase project yet. Enable the Google provider in the Firebase Console."
     const val MISSING_TOKEN = "Google did not return a sign-in token. Please try again."
     const val INVALID_CREDENTIAL = "That sign-in was not accepted. Please try again."
 }
@@ -90,8 +94,17 @@ object FirebaseAuthErrors {
             "ERROR_OPERATION_NOT_ALLOWED", "ERROR_ADMIN_RESTRICTED_OPERATION",
             "ERROR_INVALID_API_KEY", "ERROR_API_KEY_NOT_VALID", "ERROR_INVALID_APIKEY",
             "ERROR_APP_NOT_INSTALLED",
-            ->
-                AuthFailure(FirebaseAuthMessages.OPERATION_NOT_ALLOWED, AuthFailureKind.UNCONFIGURED)
+            -> {
+                val failureMsg = when {
+                    message?.contains("phone", ignoreCase = true) == true ->
+                        FirebaseAuthMessages.PHONE_PROVIDER_DISABLED
+                    message?.contains("google", ignoreCase = true) == true ->
+                        FirebaseAuthMessages.GOOGLE_PROVIDER_DISABLED
+                    else ->
+                        FirebaseAuthMessages.OPERATION_NOT_ALLOWED
+                }
+                AuthFailure(failureMsg, AuthFailureKind.UNCONFIGURED)
+            }
 
             "ERROR_NETWORK_REQUEST_FAILED", "ERROR_WEB_NETWORK_REQUEST_FAILED" ->
                 AuthFailure(FirebaseAuthMessages.OFFLINE, AuthFailureKind.NETWORK)

@@ -36,9 +36,12 @@ class GoogleCredentialRequestTest {
         assertTrue(restricted.filterByAuthorizedAccounts)
         assertTrue(restricted.autoSelectEnabled)
 
-        val unrestricted = googleIdOption(GoogleIdRequestSpec(clientId, authorizedAccountsOnly = false))
-        assertFalse(unrestricted.filterByAuthorizedAccounts)
-        assertFalse(unrestricted.autoSelectEnabled)
+        val unrestrictedRequest = googleCredentialRequest(GoogleIdRequestSpec(clientId, authorizedAccountsOnly = false))
+        val unrestrictedOptions = unrestrictedRequest.credentialOptions
+        assertEquals(2, unrestrictedOptions.size)
+        val unrestrictedIdOption = unrestrictedOptions.filterIsInstance<GetGoogleIdOption>().single()
+        assertFalse(unrestrictedIdOption.filterByAuthorizedAccounts)
+        assertFalse(unrestrictedIdOption.autoSelectEnabled)
 
         assertEquals(1, googleCredentialRequest(GoogleIdRequestSpec(clientId, true)).credentialOptions.size)
     }
